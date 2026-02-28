@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מחיקת חשבון – רעבים</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f9f9f9;
+      color: #1a1a1a;
+      line-height: 1.8;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .header {
+      background: linear-gradient(135deg, #FF6B2B, #FFB347);
+      color: white;
+      padding: 40px 24px;
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .header h1 { font-size: 28px; font-weight: 900; margin-bottom: 6px; }
+    .header p  { font-size: 14px; opacity: 0.85; }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #FF6B2B;
+      margin: 32px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #ffe0cc;
+    }
+    p, li { font-size: 15px; color: #333; margin-bottom: 10px; }
+    ul { padding-right: 20px; margin-bottom: 12px; }
+    li { list-style: disc; }
+    .warning-box {
+      background: #fff3ec;
+      border-right: 4px solid #FF6B2B;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #555;
+      margin: 20px 0;
+    }
+    .steps {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 14px;
+      padding: 20px 24px;
+      margin: 20px 0;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .step-num {
+      background: #FF6B2B;
+      color: white;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .contact-box {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 14px;
+      padding: 20px;
+      margin-top: 20px;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #FF6B2B, #FFB347);
+      color: white;
+      padding: 14px 32px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 16px;
+      margin-top: 12px;
+    }
+    a { color: #FF6B2B; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🍽 רעבים</h1>
+  <p>מחיקת חשבון ונתונים</p>
+</div>
+
+<div class="container">
+
+  <p>
+    ניתן לבקש מחיקת חשבון ונתונים אישיים בכל עת. הבקשה תטופל תוך <strong>7 ימי עסקים</strong>.
+  </p>
+
+  <div class="warning-box">
+    ⚠️ <strong>שים לב:</strong> מחיקת החשבון היא פעולה בלתי הפיכה. כל הנתונים הקשורים לחשבונך (כולל מסעדות שמורות והעדפות) יימחקו לצמיתות.
+  </div>
+
+  <h2>מה ייכלל במחיקה</h2>
+  <ul>
+    <li>מספר הטלפון שלך ממסד הנתונים של Firebase</li>
+    <li>רשימת המסעדות השמורות שלך</li>
+    <li>העדפות התזונה שמורות בחשבון</li>
+  </ul>
+
+  <h2>כיצד לבקש מחיקה</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>שלח אימייל לכתובת <a href="mailto:Reevim@outlook.co.il">Reevim@outlook.co.il</a></div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>כתוב בנושא: <strong>"בקשת מחיקת חשבון"</strong></div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>ציין את מספר הטלפון הרשום באפליקציה</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>נאשר את קבלת הבקשה ונטפל בה תוך 7 ימי עסקים</div>
+    </div>
+  </div>
+
+  <div class="contact-box">
+    <p>לחץ כאן לשליחת בקשת מחיקה:</p>
+    <a class="btn" href="mailto:Reevim@outlook.co.il?subject=בקשת מחיקת חשבון&body=שלום, אני מבקש למחוק את חשבוני באפליקציית רעבים.%0Aמספר הטלפון הרשום: ">
+      📧 שלח בקשת מחיקה
+    </a>
+  </div>
+
+</div>
+</body>
+</html>
