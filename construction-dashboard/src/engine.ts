@@ -1,4 +1,16 @@
-import type { Apt, Building, DoneOverrides, Lot, Task, Trade } from './types'
+import type { Apt, Building, Lot, Marks, Task, Trade } from './types'
+
+/** חלוקת דירות לקומות: פירוט ידני אם קיים, אחרת חלוקה שווה (העודף לקומות האמצעיות/הנמוכות שמעל הקרקע) */
+export function aptsPerFloor(b: Building): number[] {
+  if (b.floorApts && b.floorApts.length === b.floors) return b.floorApts
+  const base = Math.floor(b.apts / b.floors)
+  let extra = b.apts - base * b.floors
+  const out = Array.from({ length: b.floors }, () => base)
+  for (let f = 1; f < b.floors && extra > 0; f++, extra--) out[f]++
+  if (extra > 0) out[0] += extra
+  return out
+}
+export const floorLabel = (f: number) => (f === 0 ? 'קרקע' : `קומה ${f}`)
 
 export const CYCLE = 14 // ימים בין קומה לקומה בשלד
 
@@ -53,8 +65,9 @@ export function buildModel(lots: Lot[], buildings: Building[], tradesIn: Trade[]
   for (const b of buildings) {
     const bApts: Apt[] = []
     let n = 1
+    const perFloor = aptsPerFloor(b)
     for (let f = 0; f < b.floors; f++) {
-      for (let i = 0; i < b.aptsPerFloor; i++) {
+      for (let i = 0; i < perFloor[f]; i++) {
         bApts.push({ id: aptIdOf(b.id, n), buildingId: b.id, floor: f, idx: i, number: n })
         n++
       }
@@ -145,7 +158,7 @@ function rng(seed: string) {
   }
 }
 
-export function buildDone(model: Model, sampleOn: boolean, overrides: DoneOverrides, today: number): DoneIndex {
+export function buildDone(model: Model, sampleOn: boolean, marks: Marks, today: number): DoneIndex {
   const idx: DoneIndex = new Map()
   if (sampleOn) {
     // נתוני דוגמה: קצב שונה לכל בניין, קבוע (לא משתנה בין טעינות)
@@ -158,9 +171,9 @@ export function buildDone(model: Model, sampleOn: boolean, overrides: DoneOverri
       if (day <= today) idx.set(t.id, day)
     }
   }
-  for (const [id, day] of Object.entries(overrides)) {
-    if (day === null) idx.delete(id)
-    else idx.set(id, day)
+  for (const [id, m] of Object.entries(marks)) {
+    if (!m) idx.delete(id)
+    else idx.set(id, m.d)
   }
   return idx
 }
@@ -213,4 +226,75 @@ export function pctColor(p: number): string {
   if (p <= 0) return NOT_STARTED
   if (p >= 100) return DONE
   return p < 50 ? lerpColor('#f6c453', '#e8d25a', p / 50) : lerpColor('#e8d25a', '#93c56a', (p - 50) / 50)
+}
+
+// ---------- מוכנות לביצוע (העברה בין מלאכות) ----------
+
+/** המשימות שחייבות להסתיים לפני המשימה הזו */
+export function predIds(model: Model, t: Task): string[] {
+  const tr = model.tradeById.get(t.tradeId)
+  const p = tr?.after ? model.tradeById.get(tr.after) : undefined
+  if (!p) {
+    // מלאכה ראשונה: קומה מוכנה כשהקומה שמתחתיה עברה את אותה מלאכה
+    if (tr?.level === 'floor' && t.floor > 0) return [taskIdOf(tr.id, floorUnit(t.buildingId, t.floor - 1))]
+    return []
+  }
+  if (p.level === 'floor') return [taskIdOf(p.id, floorUnit(t.buildingId, t.floor))]
+  if (t.aptId) return [taskIdOf(p.id, t.aptId)]
+  return (model.aptsByBuilding.get(t.buildingId) ?? []).filter((a) => a.floor === t.floor).map((a) => taskIdOf(p.id, a.id))
+}
+
+/** משימות שעדיין לא בוצעו אבל כל מה שלפניהן בוצע. הערך: היום שבו התפנו */
+export function readyTasks(model: Model, done: DoneIndex, day: number): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const t of model.tasks) {
+    if (isDone(done, t.id, day)) continue
+    const ps = predIds(model, t)
+    if (!ps.length) continue
+    let since = -Infinity
+    let ok = true
+    for (const p of ps) {
+      const d = done.get(p)
+      if (d === undefined || d > day) {
+        ok = false
+        break
+      }
+      if (d > since) since = d
+    }
+    if (ok) out.set(t.id, since)
+  }
+  return out
+}
+export const STUCK_DAYS = 21
+
+/** תחזית סיום לפי קצב 8 השבועות האחרונים */
+export function forecast(done: DoneIndex, tasks: Task[], day: number) {
+  let total = 0
+  let recent = 0
+  for (const t of tasks) {
+    const d = done.get(t.id)
+    if (d === undefined || d > day) continue
+    total++
+    if (d > day - 56) recent++
+  }
+  const perWeek = recent / 8
+  const remaining = tasks.length - total
+  const finish = remaining === 0 ? day : perWeek > 0 ? Math.round(day + (remaining / perWeek) * 7) : null
+  return { perWeek, remaining, finish }
+}
+
+/** סיום אחרון של מלאכה בקומה (לקו הזרימה): יום הסיום של כל משימות המלאכה בקומה */
+export function floorFinish(model: Model, done: DoneIndex, buildingId: string, tradeId: string, floor: number): { first?: number; last?: number; n: number; total: number } {
+  const ts = (model.tasksByBuilding.get(buildingId) ?? []).filter((t) => t.tradeId === tradeId && t.floor === floor)
+  let first: number | undefined
+  let last: number | undefined
+  let n = 0
+  for (const t of ts) {
+    const d = done.get(t.id)
+    if (d === undefined) continue
+    n++
+    if (first === undefined || d < first) first = d
+    if (last === undefined || d > last) last = d
+  }
+  return { first, last: n === ts.length ? last : undefined, n, total: ts.length }
 }

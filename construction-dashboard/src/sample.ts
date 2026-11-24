@@ -22,46 +22,75 @@ export const defaultTrades: Trade[] = [
   { id: 'handover', name: 'מסירה', level: 'apt', color: '#2e8b57', duration: 2, after: 'elecfin', lag: 10, weight: 0.5 },
 ].map((t) => ({ ...t, level: t.level as Trade['level'], sample: true }))
 
-// 7 מגרשים, 30 בניינים, 590 דירות (התפלגות דוגמה)
+// פריסת בניינים — פרויקט עכו 590 (מתוך קובץ האקסל)
+// [מגרש, מספר בניין, טיפוס, דירות, קומות מגורים כולל קרקע]
+export const AKKO_590: [string, number, string, number, number][] = [
+  ['282', 1, 'C15-1', 15, 6], ['282', 2, 'C15-1M', 15, 6], ['282', 3, 'C15', 15, 6],
+  ['288', 4, 'CM', 15, 6], ['288', 5, 'C', 15, 6], ['288', 6, 'CM', 15, 6], ['288', 7, 'A2', 50, 14],
+  ['253-277', 8, 'C21M', 21, 8], ['253-277', 9, 'B', 14, 8], ['253-277', 10, 'C21M', 21, 8], ['253-277', 11, 'C21M', 21, 8], ['253-277', 12, 'C21', 21, 8],
+  ['314', 13, 'C18-2', 18, 7], ['314', 14, 'C18M', 18, 7], ['314', 15, 'C18-1', 18, 7], ['314', 16, 'C18', 18, 7],
+  ['283-284', 17, 'C15', 15, 6], ['283-284', 18, 'C15-1M', 15, 6], ['283-284', 19, 'A', 36, 10], ['283-284', 20, 'A', 36, 10],
+  ['283-284', 21, 'C15M', 15, 6], ['283-284', 22, 'C15-1', 15, 6], ['283-284', 23, 'C15-1M', 15, 6], ['283-284', 24, 'C15M', 15, 6],
+  ['214-215', 25, 'A1M', 26, 7], ['214-215', 26, 'A1', 26, 7],
+  ['200-313', 27, 'C15-2', 15, 6], ['200-313', 28, 'B1', 10, 6], ['200-313', 29, 'C15M', 15, 6], ['200-313', 30, 'A1-1', 26, 7],
+]
+
 export function defaultStructure(): { lots: Lot[]; buildings: Building[] } {
-  const perLot = [5, 4, 4, 5, 4, 4, 4]
-  // שלושה טיפוסים: 9×2=18, 10×2=20, 7×3=21 → 10 מכל טיפוס = 590
-  const types = [
-    { floors: 9, apf: 2 },
-    { floors: 10, apf: 2 },
-    { floors: 7, apf: 3 },
-  ]
   const lots: Lot[] = []
   const buildings: Building[] = []
-  const projectStart = toDay('2025-03-01')
-  let k = 0
-  perLot.forEach((n, i) => {
-    const lotId = `L${i + 1}`
-    lots.push({ id: lotId, name: `מגרש ${i + 1}` })
-    for (let j = 0; j < n; j++) {
-      const t = types[k % 3]
-      buildings.push({
-        id: `B${k + 1}`,
-        lotId,
-        name: `${i + 1}${'אבגדהוז'[j]}`,
-        floors: t.floors,
-        aptsPerFloor: t.apf,
-        start: projectStart + i * 105 + j * 21,
-      })
-      k++
-    }
-  })
+  const projectStart = toDay('2025-05-01')
+  const perLotIndex = new Map<string, number>()
+  for (const [lotName, num, type, apts, floors] of AKKO_590) {
+    let lot = lots.find((l) => l.name === `מגרש ${lotName}`)
+    if (!lot) lots.push((lot = { id: `L${lotName}`, name: `מגרש ${lotName}` }))
+    const li = lots.indexOf(lot)
+    const j = perLotIndex.get(lot.id) ?? 0
+    perLotIndex.set(lot.id, j + 1)
+    buildings.push({
+      id: `B${num}`,
+      lotId: lot.id,
+      name: String(num),
+      type,
+      floors,
+      apts,
+      start: projectStart + li * 105 + j * 20,
+    })
+  }
   return { lots, buildings }
 }
 
 export function defaultData(): ProjectData {
   const { lots, buildings } = defaultStructure()
   return {
-    projectName: 'פרויקט מגורים',
+    projectName: 'פרויקט עכו 590',
     lots,
     buildings,
     trades: defaultTrades,
-    userDone: {},
     sampleOn: true,
   }
+}
+
+// ---------- תוכנית מצב (מתוך תשריט המגרשים) ----------
+// קואורדינטות בפיקסלים של התשריט: x מערב→מזרח, y צפון→דרום. סקאלה: 0.32 מ׳ לפיקסל.
+export const PLAN_SCALE = 0.32
+export const PLAN_CENTER = { x: 450, y: 630 }
+/** מרכז כל בניין לפי מספרו */
+export const PLAN_BUILDINGS: Record<string, [number, number]> = {
+  '23': [122, 95], '24': [228, 95], '22': [122, 178], '21': [228, 268], '20': [122, 305], '19': [122, 395], '18': [122, 485], '17': [240, 485],
+  '28': [488, 92], '27': [402, 142], '29': [562, 142], '30': [728, 142],
+  '26': [405, 280], '25': [405, 368],
+  '1': [122, 600], '2': [122, 698], '3': [228, 698],
+  '16': [405, 600], '15': [512, 600], '13': [405, 715], '14': [512, 715],
+  '4': [122, 925], '5': [228, 925], '6': [228, 1022], '7': [128, 1145],
+  '11': [400, 888], '12': [522, 888], '10': [400, 985], '9': [388, 1075], '8': [400, 1165],
+}
+/** גבולות המגרשים (מלבנים: x1,y1,x2,y2) לפי שם המגרש */
+export const PLAN_LOTS: Record<string, [number, number, number, number][]> = {
+  'מגרש 283-284': [[60, 58, 288, 525]],
+  'מגרש 200-313': [[343, 58, 835, 182]],
+  'מגרש 214-215': [[343, 220, 497, 428]],
+  'מגרש 282': [[60, 563, 288, 738]],
+  'מגרש 314': [[343, 563, 583, 760]],
+  'מגרש 288': [[60, 893, 288, 1205]],
+  'מגרש 253-277': [[343, 855, 583, 940], [343, 855, 462, 1205]],
 }

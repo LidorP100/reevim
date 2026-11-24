@@ -1,108 +1,137 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
-import { aptDone, countDone, isDone, pctColor } from '../engine'
-
-function Bar({ pct, color }: { pct: number; color?: string }) {
-  return (
-    <div className="bar">
-      <div className="bar-fill" style={{ width: `${pct}%`, background: color ?? pctColor(pct) }} />
-    </div>
-  )
-}
+import { aptDone, countDone, forecast, isDone, readyTasks, STUCK_DAYS } from '../engine'
+import { fmt } from '../date'
+import { Avatar, Bar, CountUp, Icon, Ring } from '../components/ui'
 
 export function Overview() {
-  const { model, done, date, setSel, setTab } = useStore()
+  const { model, done, date, setSel, setTab, marks, names, defects, openApt } = useStore()
 
-  const stats = useMemo(() => {
+  const s = useMemo(() => {
     const total = countDone(done, model.tasks, date)
-    const week = countDone(done, model.tasks, date - 7)
+    const fc = forecast(done, model.tasks, date)
     const aptsDone = model.apts.filter((a) => aptDone(model, done, a.id, date)).length
-    const shellTrades = model.trades.filter((t) => t.level === 'floor').map((t) => t.id)
+    const shellIds = new Set(model.trades.filter((t) => t.level === 'floor').map((t) => t.id))
     const shellDone = model.buildings.filter((b) =>
-      (model.tasksByBuilding.get(b.id) ?? []).filter((t) => shellTrades.includes(t.tradeId)).every((t) => isDone(done, t.id, date)),
+      (model.tasksByBuilding.get(b.id) ?? []).filter((t) => shellIds.has(t.tradeId)).every((t) => isDone(done, t.id, date)),
     ).length
+    const ready = readyTasks(model, done, date)
+    let stuck = 0
+    for (const since of ready.values()) if (date - since > STUCK_DAYS) stuck++
+
     const perBuilding = new Map(
       model.buildings.map((b) => {
         const ts = model.tasksByBuilding.get(b.id) ?? []
         const c = countDone(done, ts, date)
         const apts = model.aptsByBuilding.get(b.id) ?? []
         const delivered = apts.filter((a) => aptDone(model, done, a.id, date)).length
-        // השלב הנוכחי: המלאכה האחרונה (לפי סדר) שהתחילה
         let stage = 'טרם התחיל'
         for (const t of model.trades) if (ts.some((x) => x.tradeId === t.id && isDone(done, x.id, date))) stage = t.name
         return [b.id, { ...c, delivered, apts: apts.length, stage }]
       }),
     )
-    const perTrade = model.trades.map((t) => ({
-      trade: t,
-      ...countDone(done, model.tasks.filter((x) => x.tradeId === t.id), date),
-    }))
-    return { total, weekDelta: total.done - week.done, aptsDone, shellDone, perBuilding, perTrade }
-  }, [model, done, date])
+    const perTrade = model.trades.map((t) => ({ trade: t, ...countDone(done, model.tasks.filter((x) => x.tradeId === t.id), date) }))
+
+    // פעילות אחרונה: ביצועים ב־21 הימים שעד התאריך, מקובצים לפי יום+בניין+מלאכה
+    const groups = new Map<string, { day: number; b: string; trade: string; n: number; by?: string; apt?: string }>()
+    for (const t of model.tasks) {
+      const d = done.get(t.id)
+      if (d === undefined || d > date || d < date - 21) continue
+      const k = `${d}|${t.buildingId}|${t.tradeId}`
+      const g = groups.get(k) ?? { day: d, b: t.buildingId, trade: t.tradeId, n: 0 }
+      g.n++
+      g.by = g.by ?? marks[t.id]?.by
+      g.apt = t.aptId ?? undefined
+      groups.set(k, g)
+    }
+    const feed = [...groups.values()].sort((a, b) => b.day - a.day).slice(0, 9)
+    return { total, fc, aptsDone, shellDone, ready: ready.size, stuck, perBuilding, perTrade, feed }
+  }, [model, done, date, marks])
 
   const openBuilding = (id: string) => {
     const b = model.buildingById.get(id)!
     setSel({ lotId: b.lotId, buildingId: id, aptId: null })
     setTab('matrix')
   }
+  const openDefects = defects.filter((d) => d.status === 'open').length
 
   return (
-    <div className="view">
-      <div className="kpis">
-        <div className="kpi">
-          <span className="kpi-label">התקדמות כללית</span>
-          <span className="kpi-value">{stats.total.pct.toFixed(1)}%</span>
-          <Bar pct={stats.total.pct} />
+    <>
+      <section className="card hero">
+        <Ring pct={s.total.pct} label={<CountUp value={s.total.pct} decimals={1} suffix="%" />} sub="ביצוע כולל" />
+        <div className="hero-facts stagger">
+          <div className="fact" style={{ ['--i' as string]: 0 }}>
+            <span>דירות שהושלמו</span>
+            <b>
+              <CountUp value={s.aptsDone} /> <span className="muted" style={{ fontSize: 15 }}>/ {model.apts.length}</span>
+            </b>
+            <Bar pct={(s.aptsDone / Math.max(1, model.apts.length)) * 100} />
+          </div>
+          <div className="fact" style={{ ['--i' as string]: 1 }}>
+            <span>בניינים עם שלד גמור</span>
+            <b>
+              <CountUp value={s.shellDone} /> <span className="muted" style={{ fontSize: 15 }}>/ {model.buildings.length}</span>
+            </b>
+            <Bar pct={(s.shellDone / Math.max(1, model.buildings.length)) * 100} />
+          </div>
+          <div className="fact" style={{ ['--i' as string]: 2 }}>
+            <span>תחזית סיום לפי הקצב</span>
+            <b>{s.fc.finish === null ? '—' : s.fc.remaining === 0 ? 'הושלם' : fmt(s.fc.finish)}</b>
+            <em>{s.fc.remaining.toLocaleString()} משימות נותרו</em>
+          </div>
+          <div className="fact" style={{ ['--i' as string]: 3 }}>
+            <span>קצב ממוצע (8 שבועות)</span>
+            <b>
+              <CountUp value={s.fc.perWeek} /> <span className="muted" style={{ fontSize: 14 }}>משימות לשבוע</span>
+            </b>
+          </div>
+          <button className="fact" style={{ ['--i' as string]: 4, border: 0, background: 'none', padding: 0, textAlign: 'start', cursor: 'pointer' }} onClick={() => setTab('board')}>
+            <span>מוכן לביצוע עכשיו</span>
+            <b>
+              <CountUp value={s.ready} />
+            </b>
+            <em>{s.stuck > 0 ? <span className="danger-text">{s.stuck} ממתינות מעל 3 שבועות</span> : 'אין משימות תקועות'}</em>
+          </button>
+          <button className="fact" style={{ ['--i' as string]: 5, border: 0, background: 'none', padding: 0, textAlign: 'start', cursor: 'pointer' }} onClick={() => setTab('defects')}>
+            <span>ליקויים פתוחים</span>
+            <b className={openDefects ? 'danger-text' : ''}>{openDefects}</b>
+            <em>{defects.length} נרשמו סה״כ</em>
+          </button>
         </div>
-        <div className="kpi">
-          <span className="kpi-label">דירות שהושלמו</span>
-          <span className="kpi-value">
-            {stats.aptsDone} <small>/ {model.apts.length}</small>
-          </span>
-          <Bar pct={(stats.aptsDone / Math.max(1, model.apts.length)) * 100} />
-        </div>
-        <div className="kpi">
-          <span className="kpi-label">בניינים עם שלד גמור</span>
-          <span className="kpi-value">
-            {stats.shellDone} <small>/ {model.buildings.length}</small>
-          </span>
-          <Bar pct={(stats.shellDone / Math.max(1, model.buildings.length)) * 100} />
-        </div>
-        <div className="kpi">
-          <span className="kpi-label">בוצעו ב־7 הימים האחרונים</span>
-          <span className="kpi-value">{stats.weekDelta}</span>
-          <span className="kpi-sub">משימות</span>
-        </div>
-      </div>
+      </section>
 
-      <div className="grid-2">
+      <div className="grid-2 split">
         <section className="card">
-          <h3>מגרשים ובניינים</h3>
-          <div className="lots">
-            {model.lots.map((lot) => {
+          <div className="card-head">
+            <h3>מגרשים ובניינים</h3>
+            <span className="muted small">לחיצה על בניין פותחת את מטריצת הביצוע</span>
+          </div>
+          <div className="lots stagger">
+            {model.lots.map((lot, li) => {
               const bs = model.buildings.filter((b) => b.lotId === lot.id)
-              const lotTasks = bs.flatMap((b) => model.tasksByBuilding.get(b.id) ?? [])
-              const lc = countDone(done, lotTasks, date)
-              const aptCount = bs.reduce((s, b) => s + b.floors * b.aptsPerFloor, 0)
+              const lc = countDone(done, bs.flatMap((b) => model.tasksByBuilding.get(b.id) ?? []), date)
+              const aptCount = bs.reduce((a, b) => a + b.apts, 0)
               return (
-                <div key={lot.id} className="lot">
+                <div key={lot.id} className="lot" style={{ ['--i' as string]: li }}>
                   <div className="lot-head">
                     <b>{lot.name}</b>
-                    <span className="muted">
+                    <span className="muted small">
                       {bs.length} בניינים · {aptCount} דירות
                     </span>
                     <span className="lot-pct">{lc.pct.toFixed(0)}%</span>
                   </div>
                   {bs.map((b) => {
-                    const s = stats.perBuilding.get(b.id)!
+                    const pb = s.perBuilding.get(b.id)!
                     return (
-                      <button key={b.id} className="brow" onClick={() => openBuilding(b.id)} title="פתח מטריצת ביצוע">
-                        <span className="brow-name">בניין {b.name}</span>
-                        <Bar pct={s.pct} />
-                        <span className="brow-pct">{s.pct.toFixed(0)}%</span>
-                        <span className="brow-stage muted">{s.stage}</span>
-                        <span className="brow-apts muted">
-                          {s.delivered}/{s.apts} דירות
+                      <button key={b.id} className="brow" onClick={() => openBuilding(b.id)}>
+                        <span className="brow-name">
+                          <b>בניין {b.name}</b>
+                          <small>{b.type}</small>
+                        </span>
+                        <Bar pct={pb.pct} />
+                        <span className="brow-pct">{pb.pct.toFixed(0)}%</span>
+                        <span className="brow-stage">
+                          {pb.stage} · {pb.delivered}/{pb.apts} דירות הושלמו
                         </span>
                       </button>
                     )
@@ -113,25 +142,61 @@ export function Overview() {
           </div>
         </section>
 
-        <section className="card">
-          <h3>התקדמות לפי מלאכה (כל הפרויקט)</h3>
-          <div className="trade-list">
-            {stats.perTrade.map(({ trade, pct, done: d, total }) => (
-              <div key={trade.id} className="trade-row">
-                <span className="dot" style={{ background: trade.color }} />
-                <span className="trade-name">{trade.name}</span>
-                <Bar pct={pct} color={trade.color} />
-                <span className="muted num">
-                  {d}/{total}
-                </span>
+        <div className="stack">
+          <section className="card">
+            <h3>התקדמות לפי מלאכה</h3>
+            <div className="trade-list">
+              {s.perTrade.map(({ trade, pct, done: d, total }) => (
+                <div key={trade.id} className="trade-row">
+                  <span className="dot" style={{ background: trade.color }} />
+                  <span>{trade.name}</span>
+                  <Bar pct={pct} color={trade.color} />
+                  <span className="muted num small" style={{ textAlign: 'end' }}>
+                    {d}/{total}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-head">
+              <h3>פעילות אחרונה</h3>
+              <span className="muted small">3 שבועות עד {fmt(date)}</span>
+            </div>
+            {s.feed.length === 0 ? (
+              <div className="empty">
+                <Icon name="clock" size={28} />
+                אין ביצועים בתקופה הזו
               </div>
-            ))}
-          </div>
-          <p className="muted small">
-            מלאכות ברמת קומה נספרות לכל קומה; מלאכות ברמת דירה נספרות לכל דירה.
-          </p>
-        </section>
+            ) : (
+              <div className="feed">
+                {s.feed.map((g, k) => {
+                  const tr = model.tradeById.get(g.trade)!
+                  const b = model.buildingById.get(g.b)!
+                  return (
+                    <div key={k} className="feed-item">
+                      {g.by ? <Avatar id={g.by} name={names[g.by]} /> : <span className="avatar" style={{ background: tr.color }}><Icon name="check" size={14} stroke={2.5} /></span>}
+                      <span>
+                        <b>{tr.name}</b> · בניין {b.name}{' '}
+                        {g.n === 1 && g.apt ? (
+                          <button className="btn ghost small" style={{ minHeight: 0, padding: '0 4px' }} onClick={() => openApt(g.apt!)}>
+                            דירה {model.aptById.get(g.apt)?.number}
+                          </button>
+                        ) : (
+                          <span className="muted">· {g.n} {tr.level === 'floor' ? 'קומות' : 'דירות'}</span>
+                        )}
+                        {g.by && names[g.by] ? <span className="muted"> · {names[g.by]}</span> : null}
+                      </span>
+                      <span className="muted small num">{fmt(g.day)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

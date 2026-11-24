@@ -8,30 +8,34 @@ export interface Lot {
 export interface Building {
   id: string
   lotId: string
-  name: string
-  floors: number // כולל קומת קרקע
-  aptsPerFloor: number
-  start: number // יום התחלה (מספר ימים מאז 1970)
+  name: string // מספר בניין
+  type?: string // טיפוס (C15, A2…)
+  floors: number // קומות מגורים כולל קרקע
+  apts: number // סה"כ דירות
+  floorApts?: number[] // פירוט ידני: דירות בכל קומה (אינדקס 0 = קרקע)
+  start: number // יום התחלה (לנתוני דוגמה בלבד)
 }
 
 export interface Trade {
   id: string
   name: string
-  level: Level // ברמת קומה או ברמת דירה
+  level: Level
   color: string
-  duration: number // ימים
-  after: string | null // מלאכה קודמת (תלות)
-  lag: number // כמה ימים אחרי תחילת המלאכה הקודמת מתחילים
-  weight: number // משקל בחישוב אחוז ביצוע כללי
-  sample?: boolean // מלאכה עם נתוני דוגמה
+  duration: number
+  after: string | null
+  lag: number
+  weight: number
+  contractor?: string
+  phone?: string
+  sample?: boolean
 }
 
 export interface Apt {
   id: string
   buildingId: string
   floor: number
-  idx: number // מיקום בקומה
-  number: number // מספר דירה בבניין
+  idx: number
+  number: number
 }
 
 export interface Task {
@@ -40,19 +44,42 @@ export interface Task {
   buildingId: string
   floor: number
   aptId: string | null
-  ps: number // התחלה מתוכננת
-  pe: number // סיום מתוכנן
+  ps: number
+  pe: number
 }
 
-// תאריך ביצוע שהוזן ידנית לכל משימה (null = סומן כלא בוצע)
-export type DoneOverrides = Record<string, number | null>
+/** סימון ביצוע: יום הביצוע, מתי סומן ומי סימן */
+export interface Mark {
+  d: number
+  at?: number
+  by?: string
+}
+/** null = סומן במפורש כלא בוצע */
+export type Marks = Record<string, Mark | null>
+
+export interface AptInfo {
+  rooms?: string
+  buyer?: string
+  notes?: string
+}
+
+export interface Defect {
+  id: string
+  aptId: string
+  buildingId: string
+  tradeId?: string
+  text: string
+  status: 'open' | 'fixed'
+  created: number
+  fixedAt?: number
+  by?: string
+}
 
 export interface ProjectData {
   projectName: string
   lots: Lot[]
   buildings: Building[]
   trades: Trade[]
-  userDone: DoneOverrides
   sampleOn: boolean
 }
 
