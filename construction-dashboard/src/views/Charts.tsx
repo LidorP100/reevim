@@ -14,7 +14,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useStore } from '../store'
-import { countDone, forecast, isDone, scopeTasks } from '../engine'
+import { countDone, forecast, isDone, plannedPct, scopeTasks } from '../engine'
 import { ScopePicker } from '../components/ScopePicker'
 import { useRange } from '../components/Timeline'
 import { fmt, fmtMonth, fromDay, TODAY } from '../date'
@@ -22,21 +22,22 @@ import { fmt, fmtMonth, fromDay, TODAY } from '../date'
 const AXIS = { fontSize: 12, fill: 'var(--muted)' }
 
 export function Charts() {
-  const { model, done, date, sel } = useStore()
+  const { model, done, date, sel, data } = useStore()
   const { start, end } = useRange()
   const tasks = useMemo(() => scopeTasks(model, sel.lotId, sel.buildingId, sel.aptId), [model, sel])
 
   // עקומת התקדמות מצטברת + קצב חודשי
   const { curve, monthly } = useMemo(() => {
     const days = tasks.map((t) => done.get(t.id)).filter((d): d is number => d !== undefined).sort((a, b) => a - b)
-    const curve: { day: number; pct?: number; fc?: number }[] = []
+    const curve: { day: number; pct?: number; fc?: number; plan?: number }[] = []
     let i = 0
     const fc = forecast(done, tasks, date)
     const nowPct = tasks.length ? (days.filter((d) => d <= date).length / tasks.length) * 100 : 0
     const perDay = tasks.length ? (fc.perWeek / 7 / tasks.length) * 100 : 0
     for (let d = start; d <= end; d += 7) {
       while (i < days.length && days[i] <= d) i++
-      const pt: { day: number; pct?: number; fc?: number } = { day: d }
+      const pt: { day: number; pct?: number; fc?: number; plan?: number } = { day: d }
+      if (data.planOn) pt.plan = +plannedPct(tasks, d).toFixed(1)
       if (d <= date) pt.pct = tasks.length ? +((i / tasks.length) * 100).toFixed(1) : 0
       if (d >= date - 7 && perDay > 0 && nowPct < 100) pt.fc = +Math.min(100, nowPct + (d - date) * perDay).toFixed(1)
       curve.push(pt)
@@ -55,7 +56,7 @@ export function Charts() {
       cur.setUTCMonth(cur.getUTCMonth() + 1)
     }
     return { curve, monthly }
-  }, [tasks, done, start, end, date])
+  }, [tasks, done, start, end, date, data.planOn])
 
   const byTrade = useMemo(
     () =>
@@ -120,6 +121,7 @@ export function Charts() {
                 <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={AXIS} />
                 <Tooltip labelFormatter={(d) => fmt(+d)} formatter={(v, n) => [`${v}%`, n]} />
                 <Area type="monotone" dataKey="pct" name="בוצע" stroke="var(--accent)" fill="var(--accent-soft)" strokeWidth={2.2} animationDuration={700} />
+                {data.planOn && <Line type="monotone" dataKey="plan" name="מתוכנן" stroke="var(--muted)" strokeWidth={1.6} dot={false} animationDuration={700} />}
                 <Line type="monotone" dataKey="fc" name="תחזית לפי הקצב" stroke="var(--amber)" strokeDasharray="6 4" strokeWidth={2} dot={false} animationDuration={700} />
                 <ReferenceLine x={date} stroke="var(--ink)" strokeDasharray="4 3" label={{ value: fmt(date), position: 'top', fontSize: 11 }} />
                 <ReferenceLine x={TODAY} stroke="var(--amber)" strokeOpacity={0.6} />

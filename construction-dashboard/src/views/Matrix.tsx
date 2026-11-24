@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { countDone, floorLabel, floorUnit, isDone, readyTasks, taskIdOf } from '../engine'
+import { countDone, floorLabel, floorUnit, isDone, isLate, readyTasks, taskIdOf } from '../engine'
 import { ScopePicker } from '../components/ScopePicker'
 import { Icon } from '../components/ui'
+import { exportMatrix } from '../exporters'
 import { fmt, fromDay, toDay, TODAY } from '../date'
 
 type Mode = 'select' | 'quick'
 
 export function Matrix() {
-  const { model, done, date, sel, setSel, setDone, openApt, canWrite } = useStore()
+  const store = useStore()
+  const { model, done, date, sel, setSel, setDone, openApt, canWrite, data } = store
   const [mode, setMode] = useState<Mode>('select')
   const [picked, setPicked] = useState<Map<string, string[]>>(new Map())
   const [markDay, setMarkDay] = useState(Math.min(date, TODAY))
@@ -76,6 +78,10 @@ export function Matrix() {
     const all = ids.length > 0 && n === ids.length
     const some = n > 0 && !all
     const isReady = !all && ids.some((id) => ready.has(id))
+    const late = !!data.planOn && !all && ids.some((id) => {
+      const tk = model.taskById.get(id)
+      return !!tk && isLate(done, tk, date)
+    })
     const d = ids.length === 1 ? done.get(ids[0]) : undefined
     const tr = model.tradeById.get(tId)!
     const title = `${tr.name} · ${aptId ? `דירה ${model.aptById.get(aptId)?.number}` : floorLabel(f)}${all && d !== undefined ? ` · בוצע ${fmt(d)}` : isReady ? ' · מוכן לביצוע' : ''}`
@@ -83,7 +89,7 @@ export function Matrix() {
       <td
         key={tId}
         data-key={key}
-        className={`cell${all ? ' is-done' : some ? ' is-some' : ''}${isReady ? ' ready' : ''}${picked.has(key) ? ' picked' : ''}`}
+        className={`cell${all ? ' is-done' : some ? ' is-some' : ''}${isReady ? ' ready' : ''}${late ? ' late' : ''}${picked.has(key) ? ' picked' : ''}`}
         title={title}
         onPointerDown={(e) => {
           if (!canWrite) return
@@ -132,6 +138,14 @@ export function Matrix() {
           {b.type ? ` · ${b.type}` : ''} · {b.floors} קומות · {apts.length} דירות · {bStats.pct.toFixed(1)}%
         </span>
         <div className="spacer" />
+        <div className="seg" role="group" aria-label="ייצוא">
+          <button onClick={() => exportMatrix(store, [b.id])} title="ייצוא הבניין לאקסל">
+            <Icon name="report" size={15} /> אקסל
+          </button>
+          <button onClick={() => exportMatrix(store, model.buildings.map((x) => x.id))} title="כל הבניינים, גיליון לכל בניין">
+            כל הבניינים
+          </button>
+        </div>
         <label className="check small">
           <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
           הסתר דירות שהושלמו
@@ -161,6 +175,12 @@ export function Matrix() {
           <i style={{ backgroundImage: 'repeating-linear-gradient(135deg, transparent 0 4px, var(--accent-soft) 4px 6px)' }} />
           מוכן לביצוע
         </span>
+        {data.planOn && (
+          <span>
+            <i style={{ boxShadow: 'inset 0 0 0 2px var(--danger)' }} />
+            בפיגור מול התוכנית
+          </span>
+        )}
         <span className="muted">
           {mode === 'select' ? 'לחיצה או גרירה בוחרת תאים · לחיצה על כותרת בוחרת עמודה או קומה' : 'לחיצה מסמנת או מבטלת מיד · גרירה מסמנת טווח'}
         </span>

@@ -111,12 +111,64 @@ export interface Drawing {
   created: number
 }
 
+/** תמונה מהשטח */
+export interface Photo {
+  asset: string // מזהה הקובץ
+  aptId?: string
+  taskId?: string
+  defectId?: string
+  note?: string
+  created: number
+  by?: string
+}
+
+export type CheckState = 'ok' | 'defect' | 'na'
+/** פרוטוקול מסירת דירה */
+export interface Handover {
+  aptId: string
+  day: number
+  buyer: string
+  rep?: string
+  meters?: { water?: string; power?: string; gas?: string }
+  keys?: string
+  items: Record<string, { state: CheckState; note?: string }>
+  notes?: string
+  buyerSig?: string // data URL
+  repSig?: string
+  created: number
+  by?: string
+}
+
+/** סעיף תקציב שאינו קבלן (פיקוח, אגרות, תכנון…) */
+export interface BudgetLine {
+  id: string
+  name: string
+  category: string
+  code?: string
+  budget: number
+  notes?: string
+  invoices: Record<string, Invoice | null>
+  created: number
+}
+
+/** מודל IFC משויך לבניין */
+export interface BuildingModel {
+  id: string // = buildingId
+  asset: string
+  name: string
+  rot: number // מעלות
+  scale: number
+  shift?: number // הזזת שיוך הקומות
+  created: number
+}
+
 export interface ProjectData {
   projectName: string
   lots: Lot[]
   buildings: Building[]
   trades: Trade[]
   sampleOn: boolean
+  planOn?: boolean
 }
 
 export interface Selection {

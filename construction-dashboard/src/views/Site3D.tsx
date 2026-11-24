@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { useStore } from '../store'
 import { aptsPerFloor, countDone, floorLabel, floorUnit, isDone, lerpColor, pctColor, taskIdOf, tasksForApt, type Model } from '../engine'
 import { PLAN_BUILDINGS, PLAN_CENTER, PLAN_LOTS, PLAN_SCALE } from '../sample'
+import { loadIfc, type ParsedIfc } from '../ifc'
 import { fmt } from '../date'
 import { ScopePicker } from '../components/ScopePicker'
 import { Icon } from '../components/ui'
@@ -439,6 +440,9 @@ interface FloorState {
   slab: boolean
   walls: boolean
   tradeDone: boolean
+  pct: number // אחוז ביצוע של כל משימות הקומה
+  fin: number // חלק הגמרים שבוצע בדירות הקומה
+  tradeFrac: number // חלק הדירות בקומה שבהן המלאכה הנבחרת בוצעה
 }
 
 const BuildingMesh = memo(function BuildingMesh({
@@ -627,8 +631,108 @@ const BuildingMesh = memo(function BuildingMesh({
   )
 })
 
+const flatMats = new Map<string, THREE.MeshStandardMaterial>()
+const flatMat = (color: string) => {
+  let m = flatMats.get(color)
+  if (!m) flatMats.set(color, (m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, side: THREE.DoubleSide })))
+  return m
+}
+
+/** בניין ממודל IFC אמיתי: כל קומה במודל נצבעת לפי מצב הביצוע של הקומה המקבילה */
+function IfcBuilding({
+  p,
+  src,
+  floors,
+  mode,
+  tod,
+  tradeColor,
+  selected,
+  maxF,
+  showLabel,
+  onPick,
+}: {
+  p: Placed
+  src: { key: string; get: () => Promise<ArrayBuffer>; rot: number; scale: number; shift: number }
+  floors: FloorState[]
+  mode: Mode
+  tod: TimeOfDay
+  tradeColor: string
+  selected: boolean
+  maxF: number
+  showLabel: boolean
+  onPick: () => void
+}) {
+  const [parsed, setParsed] = useState<ParsedIfc | null>(null)
+  const [stage, setStage] = useState('טוען מודל…')
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    let alive = true
+    setErr(false)
+    loadIfc(src.key, src.get, (s) => alive && setStage(s))
+      .then((r) => alive && setParsed(r))
+      .catch((e) => {
+        console.warn('IFC', e)
+        if (alive) setErr(true)
+      })
+    return () => {
+      alive = false
+    }
+  }, [src.key, src.get])
+  const viz = mode === 'viz'
+  const vcMat = useMemo(() => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }), [])
+  const glassMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#8fb3cc', transparent: true, opacity: 0.4, metalness: 0.3, roughness: 0.1, side: THREE.DoubleSide, depthWrite: false }), [])
+  const litMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#ffd28a', emissive: '#ffae4a', emissiveIntensity: 1.4, toneMapped: false, side: THREE.DoubleSide }), [])
+  if (!parsed)
+    return (
+      <Html position={[p.x, 8, p.z]} center className="lbl3d" zIndexRange={[25, 0]}>
+        {err ? 'לא ניתן לטעון את מודל ה־IFC' : stage}
+      </Html>
+    )
+  const top = floors.length - 1
+  return (
+    <group position={[p.x + 0, 0.06, p.z]} rotation-y={(src.rot * Math.PI) / 180} scale={src.scale}>
+      {showLabel && (
+        <Html position={[0, parsed.size.h + 4, 0]} center className={`lbl3d${selected ? ' sel' : ''}`} zIndexRange={[20, 0]}>
+          {p.b.name} · IFC
+        </Html>
+      )}
+      {parsed.storeys.map((s, i) => {
+        const f = i - parsed.groundIndex - src.shift
+        const fs = floors[Math.max(0, Math.min(top, f))]
+        if (!fs) return null
+        if (f > maxF && f <= top) return null
+        const shown = !viz || (f < 0 ? floors[0]?.slab : f > top ? floors[top]?.walls : fs.slab)
+        if (!shown) return null
+        let mat: THREE.Material = vcMat
+        let color: string | null = null
+        if (viz) {
+          if (f >= 0 && f <= top && (!fs.walls || fs.fin < 0.5)) color = fs.walls ? C.blocks : C.concrete
+        } else if (mode === 'status') color = pctColor(f < 0 || f > top ? 100 : fs.pct)
+        else color = (fs.tradeDone || fs.tradeFrac >= 0.5) && f >= 0 && f <= top ? tradeColor : C.ghost
+        if (color) mat = flatMat(color)
+        const lit = viz && tod !== 'day' && f >= 0 && f <= top && fs.fin >= 0.99
+        return (
+          <Grow key={i} from={viz ? 0 : 1}>
+            {s.opaque && <mesh geometry={s.opaque} material={mat} castShadow receiveShadow onClick={(e) => { e.stopPropagation(); onPick() }} />}
+            {s.glass && <mesh geometry={s.glass} material={lit ? litMat : glassMat} />}
+          </Grow>
+        )
+      })}
+    </group>
+  )
+}
+
 export function Site3D() {
-  const { model, done, date, sel, setSel, openApt, data } = useStore()
+  const { model, done, date, sel, setSel, openApt, data, models, saveModel, upload, canWrite, toast, ask } = useStore()
+  const [localModels, setLocalModels] = useState<Record<string, { name: string; buf: ArrayBuffer }>>({})
+  const [ifcBusy, setIfcBusy] = useState(false)
+  const ifcInput = useRef<HTMLInputElement>(null)
+  const ifcSrc = useMemo(() => {
+    const out = new Map<string, { key: string; get: () => Promise<ArrayBuffer>; rot: number; scale: number; shift: number }>()
+    for (const m of models) out.set(m.id, { key: m.asset, get: () => fetch(`/_blob/${m.asset}`).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer() }), rot: m.rot ?? 0, scale: m.scale ?? 1, shift: m.shift ?? 0 })
+    for (const [bid, l] of Object.entries(localModels)) out.set(bid, { key: 'local:' + bid + ':' + l.name, get: async () => l.buf, rot: 0, scale: 1, shift: 0 })
+    return out
+  }, [models, localModels])
   const [mode, setMode] = useState<Mode>('viz')
   const [tod, setTod] = useState<TimeOfDay>('sunset')
   const [tradeId, setTradeId] = useState(model.trades[0]?.id ?? '')
@@ -657,7 +761,7 @@ export function Site3D() {
       for (let f = 0; f < b.floors; f++) {
         const fu = floorUnit(b.id, f)
         const walls = has('walls') ? ok('walls', fu) : true
-        const fs: FloorState = { slab: has('slab') ? ok('slab', fu) : walls, walls, tradeDone: tr?.level === 'floor' ? ok(tr.id, fu) : false }
+        const fs: FloorState = { slab: has('slab') ? ok('slab', fu) : walls, walls, tradeDone: tr?.level === 'floor' ? ok(tr.id, fu) : false, pct: 0, fin: 0, tradeFrac: 0 }
         floors.push(fs)
         const blocks = has('blocks') ? ok('blocks', fu) : walls
         const onFloor = bApts.filter((a) => a.floor === f)
@@ -692,6 +796,13 @@ export function Site3D() {
           }
           apts.push(s)
         }
+        if (onFloor.length) {
+          const finOf = (aid: string) => (aptTradeIds.length ? aptTradeIds.filter((t) => ok(t, aid)).length / aptTradeIds.length : 0)
+          fs.fin = onFloor.reduce((a, x) => a + finOf(x.id), 0) / onFloor.length
+          if (tr?.level === 'apt') fs.tradeFrac = onFloor.filter((x) => ok(tr.id, x.id)).length / onFloor.length
+        }
+        const ft = (model.tasksByBuilding.get(b.id) ?? []).filter((t) => t.floor === f)
+        fs.pct = ft.length ? (ft.filter((t) => isDone(done, t.id, date)).length / ft.length) * 100 : 0
       }
       out.set(b.id, { floors, apts, aptIds })
     }
@@ -772,6 +883,74 @@ export function Site3D() {
           ))}
         </div>
         {selB && (
+          <div className="seg" role="group" aria-label="מודל אמיתי">
+            {(() => {
+              const m = models.find((x) => x.id === selB.id)
+              const local = localModels[selB.id]
+              if (m)
+                return (
+                  <>
+                    <button onClick={() => saveModel({ ...m, rot: ((m.rot ?? 0) + 90) % 360 })} disabled={!canWrite} title="סובב את המודל ב־90°">
+                      <Icon name="refresh" size={14} /> סובב
+                    </button>
+                    <button onClick={() => saveModel({ ...m, shift: (m.shift ?? 0) + 1 })} disabled={!canWrite} title="הזז את שיוך הקומות קומה אחת">
+                      קומות ↑
+                    </button>
+                    <button onClick={() => saveModel({ ...m, shift: (m.shift ?? 0) - 1 })} disabled={!canWrite} title="הזז את שיוך הקומות קומה אחת">
+                      ↓
+                    </button>
+                    <button onClick={() => ask(`להסיר את מודל ה־IFC מבניין ${selB.name}?`, () => saveModel(m, true))} disabled={!canWrite}>
+                      <Icon name="x" size={14} /> הסר מודל
+                    </button>
+                  </>
+                )
+              if (local)
+                return (
+                  <button onClick={() => setLocalModels((m) => {
+                    const rest = { ...m }
+                    delete rest[selB.id]
+                    return rest
+                  })}>
+                    <Icon name="x" size={14} /> הסר מודל
+                  </button>
+                )
+              return (
+                <button onClick={() => ifcInput.current?.click()} disabled={ifcBusy} title="טעינת מודל IFC אמיתי לבניין">
+                  <Icon name="building" size={14} /> {ifcBusy ? 'מעלה…' : 'מודל IFC'}
+                </button>
+              )
+            })()}
+            <input
+              ref={ifcInput}
+              type="file"
+              accept=".ifc"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f || !selB) return
+                if (upload) {
+                  setIfcBusy(true)
+                  try {
+                    const up = await upload(f, 'text/plain')
+                    if (!up) throw new Error()
+                    saveModel({ id: selB.id, asset: up.id, name: f.name, rot: 0, scale: 1, created: Date.now() })
+                    toast({ kind: 'ok', text: `המודל נשמר לבניין ${selB.name}` })
+                  } catch {
+                    toast({ kind: 'error', text: 'העלאת המודל נכשלה (עד 20MB, קובץ IFC טקסטואלי)' })
+                  } finally {
+                    setIfcBusy(false)
+                  }
+                } else {
+                  const buf = await f.arrayBuffer()
+                  setLocalModels((m) => ({ ...m, [selB.id]: { name: f.name, buf } }))
+                  toast({ kind: 'ok', text: 'המודל נטען לתצוגה (לא נשמר — זמין רק בגרסה המשותפת)' })
+                }
+              }}
+            />
+          </div>
+        )}
+        {selB && (
           <label className="cut">
             חתך עד
             <input type="range" min={0} max={selB.floors - 1} value={Math.min(cut, selB.floors - 1)} onChange={(e) => setCut(+e.target.value)} />
@@ -823,6 +1002,23 @@ export function Site3D() {
           {visible.map((p) => {
             const st = state.get(p.b.id)!
             const isSel = sel.buildingId === p.b.id
+            const src = ifcSrc.get(p.b.id)
+            if (src)
+              return (
+                <IfcBuilding
+                  key={p.b.id}
+                  p={p}
+                  src={src}
+                  floors={st.floors}
+                  mode={mode}
+                  tod={tod}
+                  tradeColor={tr?.color ?? '#888'}
+                  selected={isSel}
+                  maxF={isSel ? Math.min(cut, p.b.floors - 1) : p.b.floors - 1}
+                  showLabel={labels && (!!sel.lotId || wide)}
+                  onPick={() => setSel({ lotId: sel.lotId ? p.b.lotId : null, buildingId: p.b.id, aptId: null })}
+                />
+              )
             return (
               <BuildingMesh
                 key={p.b.id}

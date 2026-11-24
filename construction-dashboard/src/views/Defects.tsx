@@ -2,9 +2,12 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { floorLabel } from '../engine'
 import { Bar, Icon } from '../components/ui'
+import { exportDefects } from '../exporters'
+import { PhotoGrid } from '../components/Photos'
 
 export function Defects() {
-  const { model, defects, saveDefect, openApt, canWrite, ask } = useStore()
+  const store = useStore()
+  const { model, defects, saveDefect, openApt, canWrite, ask, photos } = store
   const [status, setStatus] = useState<'open' | 'fixed' | 'all'>('open')
   const [bId, setBId] = useState('')
   const [tId, setTId] = useState('')
@@ -83,6 +86,9 @@ export function Defects() {
               ))}
             </select>
             <input id="def-q" type="search" placeholder="חיפוש בתיאור" value={q} onChange={(e) => setQ(e.target.value)} />
+            <button className="btn" onClick={() => exportDefects(store)} disabled={!defects.length}>
+              <Icon name="report" size={15} /> אקסל
+            </button>
           </div>
           {list.length === 0 ? (
             <div className="empty">
@@ -119,6 +125,9 @@ export function Defects() {
                           בניין {b?.name} · דירה {a?.number} ({a ? floorLabel(a.floor) : ''})
                         </button>
                         {d.tradeId ? ` · ${model.tradeById.get(d.tradeId)?.name}` : ''} · {new Date(d.created).toLocaleDateString('he-IL')}
+                      </div>
+                      <div style={{ marginTop: 6, maxWidth: 360 }}>
+                        <PhotoGrid photos={photos.filter((p) => p.defectId === d.id)} size={56} />
                       </div>
                     </div>
                     <div className="row" style={{ gap: 4 }}>

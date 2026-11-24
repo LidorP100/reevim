@@ -3,12 +3,15 @@ import { useStore } from '../store'
 import { countDone, floorLabel, isDone, tasksForApt } from '../engine'
 import { fmt, TODAY } from '../date'
 import { Icon, Ring } from './ui'
+import { PhotoButton, PhotoGrid } from './Photos'
+import { HandoverModal } from './Handover'
 import type { AptInfo } from '../types'
 
 const ROOMS = ['', '2', '3', '4', '5', '6', 'דירת גן', 'פנטהאוז', 'מיני פנטהאוז', 'דופלקס']
 
 export function AptDrawer() {
-  const { model, done, marks, date, aptOpen, openApt, setDone, aptInfo, saveAptInfo, defects, saveDefect, setSel, setTab, names, canWrite } = useStore()
+  const { model, done, marks, date, aptOpen, openApt, setDone, aptInfo, saveAptInfo, defects, saveDefect, setSel, setTab, names, canWrite, photos, handovers } = useStore()
+  const [handoverOpen, setHandoverOpen] = useState(false)
   const apt = aptOpen ? model.aptById.get(aptOpen) : undefined
   const b = apt ? model.buildingById.get(apt.buildingId) : undefined
   const lot = b ? model.lots.find((l) => l.id === b.lotId) : undefined
@@ -105,6 +108,32 @@ export function AptDrawer() {
           </section>
 
           <section className="drawer-section">
+            <h4>
+              תמונות מהשטח · {photos.filter((p) => p.aptId === apt.id).length}
+            </h4>
+            <PhotoGrid photos={photos.filter((p) => p.aptId === apt.id)} />
+            <div style={{ marginTop: 8 }}>
+              <PhotoButton meta={{ aptId: apt.id }} />
+            </div>
+          </section>
+
+          <section className="drawer-section">
+            <h4>מסירה</h4>
+            {handovers[apt.id] ? (
+              <div className="row">
+                <span className="badge ok">נמסרה ב־{fmt(handovers[apt.id].day)} · {handovers[apt.id].buyer}</span>
+                <button className="btn small" onClick={() => setHandoverOpen(true)}>
+                  פרוטוקול המסירה
+                </button>
+              </div>
+            ) : (
+              <button className="btn primary" onClick={() => setHandoverOpen(true)} disabled={!canWrite}>
+                <Icon name="door" size={16} /> פרוטוקול מסירה
+              </button>
+            )}
+          </section>
+
+          <section className="drawer-section">
             <h4>פרטי דירה</h4>
             <div className="info-grid">
               <label className="field">
@@ -182,6 +211,14 @@ export function AptDrawer() {
                       {d.tradeId ? model.tradeById.get(d.tradeId)?.name + ' · ' : ''}
                       {new Date(d.created).toLocaleDateString('he-IL')}
                     </div>
+                    <div style={{ marginTop: 6 }}>
+                      <PhotoGrid photos={photos.filter((p) => p.defectId === d.id)} size={56} />
+                    </div>
+                    {d.status === 'open' && (
+                      <div style={{ marginTop: 4 }}>
+                        <PhotoButton meta={{ aptId: apt.id, defectId: d.id }} label="תמונה" small />
+                      </div>
+                    )}
                   </div>
                   <span className={`badge ${d.status === 'open' ? 'danger' : 'ok'}`}>{d.status === 'open' ? 'פתוח' : 'תוקן'}</span>
                 </div>
@@ -223,6 +260,7 @@ export function AptDrawer() {
           </div>
         </div>
       </aside>
+      {handoverOpen && <HandoverModal aptId={apt.id} onClose={() => setHandoverOpen(false)} />}
     </>
   )
 }

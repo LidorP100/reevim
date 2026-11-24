@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AptInfo, Contractor, Defect, Drawing, Mark, Marks, ProjectData, Selection } from './types'
+import type { AptInfo, BudgetLine, BuildingModel, Contractor, Defect, Drawing, Handover, Mark, Marks, Photo, ProjectData, Selection } from './types'
 import { defaultData } from './sample'
 import { buildDone, buildModel, type DoneIndex, type Model } from './engine'
 import { TODAY } from './date'
-import { connectBackend, type Backend, type RemoteState, type SyncStatus } from './backend'
+import { connectBackend, type Backend, type RemoteState, type SyncStatus, type Uploaded } from './backend'
 
 export type Tab = 'overview' | 'site3d' | 'matrix' | 'board' | 'flowline' | 'charts' | 'defects' | 'report' | 'drawings' | 'contractors' | 'trades' | 'structure'
 
@@ -52,7 +52,15 @@ interface Store {
   userId: string | null
   drawings: Drawing[]
   saveDrawing: (d: Drawing, remove?: boolean) => void
-  upload: ((file: Blob) => Promise<string | null>) | null
+  upload: ((file: Blob, type?: string) => Promise<Uploaded | null>) | null
+  photos: (Photo & { id: string })[]
+  savePhoto: (id: string, p: Photo | null) => void
+  handovers: Record<string, Handover>
+  saveHandover: (h: Handover) => void
+  budget: BudgetLine[]
+  saveBudget: (l: BudgetLine, remove?: boolean) => void
+  models: BuildingModel[]
+  saveModel: (m: BuildingModel, remove?: boolean) => void
   contractors: Contractor[]
   saveContractor: (c: Contractor, remove?: boolean) => void
   contractorFor: (tradeId: string) => Contractor | undefined
@@ -60,7 +68,7 @@ interface Store {
 
 const Ctx = createContext<Store | null>(null)
 
-const EMPTY: RemoteState = { loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [] }
+const EMPTY: RemoteState = { loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [], photos: {}, handover: {}, budget: [], models: [] }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [backend, setBackend] = useState<Backend | null>(null)
@@ -254,6 +262,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
   const contractors = useMemo(() => [...remote.contractors].sort((a, b) => a.name.localeCompare(b.name, 'he')), [remote.contractors])
   const contractorFor = useCallback((tradeId: string) => contractors.find((c) => c.trades.includes(tradeId)), [contractors])
+  const guard = useCallback(() => {
+    if (!backend) return false
+    if (!backend.canWrite) {
+      denied()
+      return false
+    }
+    return true
+  }, [backend, denied])
+  const photos = useMemo(
+    () =>
+      Object.values(remote.photos)
+        .flatMap((m) => Object.entries(m))
+        .filter((e): e is [string, Photo] => !!e[1])
+        .map(([id, p]) => ({ ...p, id }))
+        .sort((a, b) => b.created - a.created),
+    [remote.photos],
+  )
+  const savePhoto = useCallback(
+    (id: string, p: Photo | null) => {
+      if (!guard()) return
+      const apt = p?.aptId ? model.aptById.get(p.aptId) : undefined
+      const bId = apt?.buildingId ?? Object.entries(remote.photos).find(([, m]) => id in m)?.[0]
+      if (bId) backend!.saveItem('photos', bId, id, p && { ...p, ...(backend!.userId && !p.by ? { by: backend!.userId } : {}) })
+    },
+    [guard, backend, model, remote.photos],
+  )
+  const handovers = useMemo(() => {
+    const all: Record<string, Handover> = {}
+    for (const m of Object.values(remote.handover)) for (const [k, v] of Object.entries(m)) if (v) all[k] = v
+    return all
+  }, [remote.handover])
+  const saveHandover = useCallback(
+    (h: Handover) => {
+      if (!guard()) return
+      const apt = model.aptById.get(h.aptId)
+      if (apt) backend!.saveItem('handover', apt.buildingId, h.aptId, { ...h, ...(backend!.userId ? { by: backend!.userId } : {}) })
+    },
+    [guard, backend, model],
+  )
+  const saveBudget = useCallback((l: BudgetLine, remove?: boolean) => guard() && backend!.saveDoc('budget', l.id, remove ? null : l), [guard, backend])
+  const saveModel = useCallback((m: BuildingModel, remove?: boolean) => guard() && backend!.saveDoc('models', m.id, remove ? null : m), [guard, backend])
   const resetAll = useCallback(() => backend?.reset(), [backend])
   const createProject = useCallback(() => backend?.saveProject(defaultData()), [backend])
   const ask = useCallback((msg: string, onYes: () => void) => setPending({ msg, onYes }), [])
@@ -296,6 +345,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     drawings,
     saveDrawing,
     upload: backend?.upload ?? null,
+    photos,
+    savePhoto,
+    handovers,
+    saveHandover,
+    budget: remote.budget,
+    saveBudget,
+    models: remote.models,
+    saveModel,
     contractors,
     saveContractor,
     contractorFor,

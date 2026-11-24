@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
-import { aptDone, countDone, forecast, isDone, readyTasks, STUCK_DAYS } from '../engine'
+import { aptDone, countDone, forecast, isDone, lateTasks, plannedPct, readyTasks, STUCK_DAYS } from '../engine'
 import { fmt } from '../date'
 import { Avatar, Bar, CountUp, Icon, Ring } from '../components/ui'
+import { exportApartments } from '../exporters'
 
 export function Overview() {
-  const { model, done, date, setSel, setTab, marks, names, defects, openApt } = useStore()
+  const store = useStore()
+  const { model, done, date, setSel, setTab, marks, names, defects, openApt, data } = store
 
   const s = useMemo(() => {
     const total = countDone(done, model.tasks, date)
@@ -45,8 +47,22 @@ export function Overview() {
       groups.set(k, g)
     }
     const feed = [...groups.values()].sort((a, b) => b.day - a.day).slice(0, 9)
-    return { total, fc, aptsDone, shellDone, ready: ready.size, stuck, perBuilding, perTrade, feed }
-  }, [model, done, date, marks])
+    let plan: { planned: number; late: number; worst: { id: string; n: number; gap: number }[] } | null = null
+    if (data.planOn) {
+      const late = lateTasks(done, model.tasks, date)
+      const byB = new Map<string, number>()
+      for (const t of late) byB.set(t.buildingId, (byB.get(t.buildingId) ?? 0) + 1)
+      const worst = [...byB.entries()]
+        .map(([id, n]) => {
+          const ts = model.tasksByBuilding.get(id) ?? []
+          return { id, n, gap: plannedPct(ts, date) - countDone(done, ts, date).pct }
+        })
+        .sort((a, b) => b.gap - a.gap)
+        .slice(0, 6)
+      plan = { planned: plannedPct(model.tasks, date), late: late.length, worst }
+    }
+    return { total, fc, aptsDone, shellDone, ready: ready.size, stuck, perBuilding, perTrade, feed, plan }
+  }, [model, done, date, marks, data.planOn])
 
   const openBuilding = (id: string) => {
     const b = model.buildingById.get(id)!
@@ -100,11 +116,50 @@ export function Overview() {
         </div>
       </section>
 
+      {s.plan && (
+        <section className="card">
+          <div className="card-head">
+            <h3>מול לוח הזמנים המתוכנן</h3>
+            <span className={`badge ${s.total.pct + 2 < s.plan.planned ? 'danger' : 'ok'}`}>
+              {s.total.pct + 2 < s.plan.planned ? `פיגור של ${(s.plan.planned - s.total.pct).toFixed(1)}%` : 'בהתאם לתוכנית'}
+            </span>
+          </div>
+          <div className="plan-row">
+            <div className="fact">
+              <span>מתוכנן עד היום</span>
+              <b>{s.plan.planned.toFixed(1)}%</b>
+            </div>
+            <div className="fact">
+              <span>בוצע בפועל</span>
+              <b>{s.total.pct.toFixed(1)}%</b>
+            </div>
+            <div className="fact">
+              <span>משימות בפיגור</span>
+              <b className={s.plan.late ? 'danger-text' : ''}>{s.plan.late.toLocaleString()}</b>
+              <em>היו צריכות להסתיים לפני יותר משבוע</em>
+            </div>
+            <div className="plan-worst">
+              <span className="muted small">הבניינים עם הפיגור הגדול ביותר</span>
+              <div className="chips">
+                {s.plan.worst.length === 0 && <span className="muted small">אין</span>}
+                {s.plan.worst.map((w) => (
+                  <button key={w.id} className="chip stuck" onClick={() => openBuilding(w.id)}>
+                    בניין {model.buildingById.get(w.id)?.name} · {w.gap.toFixed(0)}% · {w.n} משימות
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="grid-2 split">
         <section className="card">
           <div className="card-head">
             <h3>מגרשים ובניינים</h3>
-            <span className="muted small">לחיצה על בניין פותחת את מטריצת הביצוע</span>
+            <button className="btn small" onClick={() => exportApartments(store)}>
+              <Icon name="report" size={14} /> סטטוס כל הדירות לאקסל
+            </button>
           </div>
           <div className="lots stagger">
             {model.lots.map((lot, li) => {

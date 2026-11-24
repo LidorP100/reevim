@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { aptDone, countDone, forecast, readyTasks, STUCK_DAYS } from '../engine'
 import { fmt } from '../date'
 import { Icon } from '../components/ui'
+import { exportReport } from '../exporters'
 
 const PERIODS = [
   { days: 7, label: 'שבוע' },
@@ -11,7 +12,8 @@ const PERIODS = [
 ]
 
 export function Report() {
-  const { model, done, date, data, toast, defects } = useStore()
+  const store = useStore()
+  const { model, done, date, data, toast, defects } = store
   const [days, setDays] = useState(7)
   const from = date - days
 
@@ -84,6 +86,9 @@ export function Report() {
           {fmt(from + 1)} – {fmt(date)} · התאריך נקבע בציר הזמן למעלה
         </span>
         <div className="spacer" />
+        <button className="btn" onClick={() => exportReport(store, from)}>
+          <Icon name="report" size={16} /> אקסל
+        </button>
         <button className="btn primary" onClick={copy}>
           <Icon name="copy" size={16} /> העתק דוח לוואטסאפ
         </button>

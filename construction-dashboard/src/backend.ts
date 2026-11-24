@@ -8,7 +8,7 @@
  *   apts/<buildingId>       — { info: { [aptId]: AptInfo } }
  *   defects/<buildingId>    — { items: { [defectId]: Defect | null } }
  */
-import type { AptInfo, Contractor, Defect, Drawing, Marks, ProjectData } from './types'
+import type { AptInfo, BudgetLine, BuildingModel, Contractor, Defect, Drawing, Handover, Marks, Photo, ProjectData } from './types'
 import { defaultData } from './sample'
 
 export interface RemoteState {
@@ -19,7 +19,17 @@ export interface RemoteState {
   defects: Record<string, Record<string, Defect | null>>
   drawings: Drawing[]
   contractors: Contractor[]
+  photos: Record<string, Record<string, Photo | null>>
+  handover: Record<string, Record<string, Handover | null>>
+  budget: BudgetLine[]
+  models: BuildingModel[]
 }
+export interface Uploaded {
+  id: string
+  url: string
+}
+export type MapCol = 'photos' | 'handover'
+export type DocCol = 'budget' | 'models'
 
 export type SyncStatus = 'local' | 'connecting' | 'live' | 'saving' | 'offline' | 'readonly'
 
@@ -36,11 +46,13 @@ export interface Backend {
   reset(): void
   saveDrawing(d: Drawing, remove?: boolean): void
   saveContractor(c: Contractor, remove?: boolean): void
-  /** העלאת קובץ (רק לעורכים במצב משותף). מחזיר כתובת או null */
-  upload: ((file: Blob) => Promise<string | null>) | null
+  /** העלאת קובץ (רק לעורכים במצב משותף) */
+  upload: ((file: Blob, type?: string) => Promise<Uploaded | null>) | null
+  saveItem(col: MapCol, buildingId: string, id: string, v: Photo | Handover | null): void
+  saveDoc(col: DocCol, id: string, v: BudgetLine | BuildingModel | null): void
 }
 
-const emptyState = (): RemoteState => ({ loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [] })
+const emptyState = (): RemoteState => ({ loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [], photos: {}, handover: {}, budget: [], models: [] })
 
 // ---------------- מקומי ----------------
 
@@ -87,6 +99,9 @@ function localBackend(): Backend {
     saveDrawing: (d, remove) =>
       commit({ ...state, drawings: remove ? state.drawings.filter((x) => x.id !== d.id) : [...state.drawings.filter((x) => x.id !== d.id), d] }),
     upload: null,
+    saveItem: (col, b, id, v) => commit({ ...state, [col]: { ...state[col], [b]: { ...state[col][b], [id]: v } } }),
+    saveDoc: (col, id, v) =>
+      commit({ ...state, [col]: v ? [...(state[col] as { id: string }[]).filter((x) => x.id !== id), v] : (state[col] as { id: string }[]).filter((x) => x.id !== id) }),
     saveContractor: (c, remove) =>
       commit({ ...state, contractors: remove ? state.contractors.filter((x) => x.id !== c.id) : [...state.contractors.filter((x) => x.id !== c.id), c] }),
   }
@@ -171,7 +186,7 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
       statusCb = status
       status('connecting')
       let got = 0
-      const need = 6
+      const need = 10
       const timer = setTimeout(() => {
         if (!state.loaded) status('offline')
       }, 10000)
@@ -223,6 +238,22 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
           ready(q.metadata)
           emit()
         }, fail),
+        ...(['photos', 'handover'] as MapCol[]).map((col) =>
+          db.collection(col).onSnapshot((q: any) => {
+            const m: Record<string, Record<string, any>> = {}
+            for (const d of q.docs) m[d.id] = d.data()?.items ?? {}
+            state = { ...state, [col]: m }
+            ready(q.metadata)
+            emit()
+          }, fail),
+        ),
+        ...(['budget', 'models'] as DocCol[]).map((col) =>
+          db.collection(col).onSnapshot((q: any) => {
+            state = { ...state, [col]: q.docs.map((d: any) => ({ ...d.data(), id: d.id })) }
+            ready(q.metadata)
+            emit()
+          }, fail),
+        ),
       ]
       cb(state)
       return () => {
@@ -277,10 +308,22 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
       if (remove) void db.doc(`contractors/${c.id}`).delete().catch(() => window.dispatchEvent(new CustomEvent('cd-write-error', { detail: 'error' })))
       else queue(`contractors/${c.id}`, JSON.parse(JSON.stringify(c)), true)
     },
+    saveItem(col, b, id, v) {
+      state = { ...state, [col]: { ...state[col], [b]: { ...state[col][b], [id]: v } } }
+      emit()
+      queue(`${col}/${b}`, { items: { [id]: v === null ? null : JSON.parse(JSON.stringify(v)) } })
+    },
+    saveDoc(col, id, v) {
+      const list = (state[col] as { id: string }[]).filter((x) => x.id !== id)
+      state = { ...state, [col]: v ? [...list, v] : list }
+      emit()
+      if (!v) void db.doc(`${col}/${id}`).delete().catch(() => window.dispatchEvent(new CustomEvent('cd-write-error', { detail: 'error' })))
+      else queue(`${col}/${id}`, JSON.parse(JSON.stringify(v)), true)
+    },
     upload: assets
-      ? async (file: Blob) => {
-          const r = await assets.upload(file)
-          return (r?.url as string) ?? null
+      ? async (file: Blob, type?: string) => {
+          const r = await assets.upload(file, type ? { type } : undefined)
+          return r?.id ? { id: r.id as string, url: (r.url as string) ?? `/_blob/${r.id}` } : null
         }
       : null,
   }

@@ -298,3 +298,33 @@ export function floorFinish(model: Model, done: DoneIndex, buildingId: string, t
   }
   return { first, last: n === ts.length ? last : undefined, n, total: ts.length }
 }
+
+// ---------- לוח זמנים מתוכנן (אופציונלי) ----------
+
+export const LATE_GRACE = 7
+export function plannedPctOf(t: Task, day: number): number {
+  if (day <= t.ps) return 0
+  if (day >= t.pe) return 100
+  return ((day - t.ps) / (t.pe - t.ps)) * 100
+}
+export function plannedPct(tasks: Task[], day: number): number {
+  if (!tasks.length) return 0
+  let s = 0
+  for (const t of tasks) s += plannedPctOf(t, day)
+  return s / tasks.length
+}
+/** משימה בפיגור: היה צריך להסתיים (עם מרווח שבוע) ועדיין לא בוצע */
+export const isLate = (done: DoneIndex, t: Task, day: number) => t.pe + LATE_GRACE < day && !isDone(done, t.id, day)
+export function lateTasks(done: DoneIndex, tasks: Task[], day: number): Task[] {
+  return tasks.filter((t) => isLate(done, t, day))
+}
+export function buildingPlan(model: Model, buildingId: string) {
+  const ts = model.tasksByBuilding.get(buildingId) ?? []
+  let start = Infinity
+  let end = -Infinity
+  for (const t of ts) {
+    if (t.ps < start) start = t.ps
+    if (t.pe > end) end = t.pe
+  }
+  return { start, end }
+}

@@ -134,8 +134,9 @@ export function Drawings() {
     if (!form.lotId) return toast({ kind: 'warn', text: 'בחר מגרש לפני ההעלאה' })
     setBusy(true)
     try {
-      const url = await upload(file)
-      if (!url) throw new Error()
+      const up = await upload(file)
+      if (!up) throw new Error()
+      const url = `/_blob/${up.id}`
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
       let w: number | undefined
       let h: number | undefined

@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { Building, Lot, ProjectData } from '../types'
-import { aptsPerFloor } from '../engine'
-import { TODAY } from '../date'
+import { aptsPerFloor, buildingPlan } from '../engine'
+import { fmt, fromDay, toDay, TODAY } from '../date'
 import { Icon } from '../components/ui'
 
 const EXAMPLE = `מגרש	מספר בניין	טיפוס	מספר דירות	קומות מגורים
@@ -161,6 +161,8 @@ export function Structure() {
                           <th>קומות</th>
                           <th>דירות</th>
                           <th>חלוקה לקומות (קרקע ←)</th>
+                          {data.planOn && <th>התחלה מתוכננת</th>}
+                          {data.planOn && <th>סיום מתוכנן</th>}
                           <th />
                         </tr>
                       </thead>
@@ -210,6 +212,12 @@ export function Structure() {
                                   />
                                 </div>
                               </td>
+                              {data.planOn && (
+                                <td>
+                                  <input type="date" value={fromDay(b.start)} onChange={(e) => e.target.value && patchB(b.id, { start: toDay(e.target.value) })} disabled={!canWrite} aria-label="התחלה מתוכננת" />
+                                </td>
+                              )}
+                              {data.planOn && <td className="num small">{fmt(buildingPlan(model, b.id).end)}</td>}
                               <td>
                                 {canWrite && (
                                   <button className="btn small danger" onClick={() => removeB(b)}>
@@ -249,6 +257,18 @@ export function Structure() {
               </button>
             </section>
           )}
+
+          <section className="card">
+            <h3>לוח זמנים מתוכנן</h3>
+            <label className="check">
+              <input type="checkbox" checked={!!data.planOn} onChange={(e) => update((d) => ({ ...d, planOn: e.target.checked }))} disabled={!canWrite} />
+              הפעל השוואה ללוח זמנים מתוכנן
+            </label>
+            <p className="muted small">
+              כשמופעל: לכל בניין נקבע תאריך התחלה, והתוכנית מחושבת מהמשכים של כל מלאכה (במסך מלאכות) — מחזור של 14 יום לקומה בשלד, והגמרים בעקבותיו.
+              המערכת מסמנת משימות שהיו צריכות להסתיים לפני יותר משבוע ועדיין לא בוצעו, ומשווה ״מתוכנן״ מול ״בפועל״ בגרפים ובסקירה.
+            </p>
+          </section>
 
           <section className="card">
             <h3>נתונים</h3>

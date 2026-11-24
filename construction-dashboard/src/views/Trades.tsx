@@ -96,6 +96,8 @@ export function Trades() {
                 <th>שם</th>
                 <th>רמה</th>
                 <th>מגיעה אחרי</th>
+                {data.planOn && <th>משך (ימים)</th>}
+                {data.planOn && <th>מתחילה אחרי (ימים)</th>}
                 <th>קבלן</th>
                 <th style={{ minWidth: 140 }}>ביצוע</th>
                 <th />
@@ -131,6 +133,16 @@ export function Trades() {
                           ))}
                       </select>
                     </td>
+                    {data.planOn && (
+                      <td>
+                        <input type="number" min={1} max={120} value={t.duration} onChange={(e) => patch(t.id, { duration: Math.max(1, +e.target.value || 1) })} disabled={!canWrite} aria-label="משך" />
+                      </td>
+                    )}
+                    {data.planOn && (
+                      <td>
+                        <input type="number" min={0} max={200} value={t.lag} onChange={(e) => patch(t.id, { lag: Math.max(0, +e.target.value || 0) })} disabled={!canWrite} aria-label="מרווח" title="כמה ימים אחרי תחילת המלאכה הקודמת" />
+                      </td>
+                    )}
                     <td className="small">{contractorFor(t.id)?.name ?? <span className="muted">—</span>}</td>
                     <td>
                       <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
