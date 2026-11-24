@@ -5,7 +5,7 @@ import type { Level, Trade } from '../types'
 const PALETTE = ['#2f7fc1', '#e0a526', '#c46b4b', '#5a8a3c', '#9c6bc4', '#3c8a7e', '#d68fb0', '#8a5a2b', '#5b6cc9', '#c9a20e']
 
 export function Trades() {
-  const { model, update, data } = useStore()
+  const { model, update, data, ask } = useStore()
   const trades = model.trades
   const last = trades[trades.length - 1]
   const [form, setForm] = useState({ name: '', level: 'apt' as Level, after: last?.id ?? '', color: PALETTE[trades.length % PALETTE.length] })
@@ -15,13 +15,13 @@ export function Trades() {
 
   const remove = (id: string) => {
     const t = data.trades.find((x) => x.id === id)
-    if (!t || !confirm(`למחוק את המלאכה "${t.name}"? כל הסימונים שלה יימחקו.`)) return
-    update((d) => ({
+    if (!t) return
+    ask(`למחוק את המלאכה "${t.name}"? כל הסימונים שלה יימחקו.`, () => update((d) => ({
       ...d,
       // מלאכות שתלויות בה עוברות לתלות במלאכה שלפניה
       trades: d.trades.filter((x) => x.id !== id).map((x) => (x.after === id ? { ...x, after: t.after } : x)),
       userDone: Object.fromEntries(Object.entries(d.userDone).filter(([k]) => !k.startsWith(id + '|'))),
-    }))
+    })))
   }
 
   const add = () => {

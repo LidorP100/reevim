@@ -9,7 +9,8 @@ const EXAMPLE = `מגרש,בניין,קומות,דירות בקומה
 מגרש 2,2א,7,3`
 
 export function Structure() {
-  const { data, update, model, resetAll } = useStore()
+  const { data, update, model, resetAll, ask } = useStore()
+  const [backup, setBackup] = useState<string | null>(null)
   const [csv, setCsv] = useState('')
   const [msg, setMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -27,7 +28,7 @@ export function Structure() {
         { id: 'B' + Date.now().toString(36), lotId, name: `חדש ${d.buildings.length + 1}`, floors: 8, aptsPerFloor: 2, start: TODAY },
       ],
     }))
-  const removeB = (id: string) => confirm('למחוק את הבניין?') && update((d) => ({ ...d, buildings: d.buildings.filter((b) => b.id !== id) }))
+  const removeB = (id: string) => ask('למחוק את הבניין?', () => update((d) => ({ ...d, buildings: d.buildings.filter((b) => b.id !== id) })))
   const removeL = (id: string) => update((d) => ({ ...d, lots: d.lots.filter((l) => l.id !== id) }))
 
   const importCsv = () => {
@@ -39,7 +40,7 @@ export function Structure() {
       setMsg('לא נמצאו שורות תקינות. פורמט: מגרש, בניין, קומות, דירות בקומה')
       return
     }
-    if (!confirm(`להחליף את מבנה הפרויקט ב־${rows.length} בניינים? סימוני הביצוע של בניינים קיימים עם אותו שם יישמרו.`)) return
+    ask(`להחליף את מבנה הפרויקט ב־${rows.length} בניינים? סימוני הביצוע של בניינים קיימים עם אותו שם יישמרו.`, () => {
     update((d) => {
       const lots: Lot[] = []
       const buildings: Building[] = []
@@ -60,9 +61,11 @@ export function Structure() {
     })
     setMsg(`יובאו ${rows.length} בניינים.`)
     setCsv('')
+    })
   }
 
   const exportJson = () => {
+    setBackup(JSON.stringify(data))
     const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -192,11 +195,35 @@ export function Structure() {
                 ⬆ טעינת גיבוי
               </button>
               <input ref={fileRef} type="file" accept=".json" hidden onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
-              <button className="btn danger" onClick={() => confirm('לאפס הכל לנתוני הדוגמה?') && resetAll()}>
+              <button className="btn danger" onClick={() => ask('לאפס הכל לנתוני הדוגמה? כל הסימונים שהזנת יימחקו.', resetAll)}>
                 איפוס
               </button>
             </div>
             <p className="muted small">הנתונים נשמרים בדפדפן הזה. מומלץ לייצא גיבוי מדי פעם.</p>
+            {backup && (
+              <div className="backup">
+                <p className="small">
+                  אם הקובץ לא ירד אוטומטית, העתק את הטקסט ושמור אותו כקובץ ‎.json. לשחזור: "טעינת גיבוי" או הדבקה כאן.
+                </p>
+                <textarea id="backup-text" rows={4} readOnly value={backup} onFocus={(e) => e.target.select()} dir="ltr" />
+                <div className="form-row">
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(backup).then(
+                        () => setMsg('הגיבוי הועתק.'),
+                        () => (document.getElementById('backup-text') as HTMLTextAreaElement | null)?.select(),
+                      )
+                    }}
+                  >
+                    העתק
+                  </button>
+                  <button className="btn" onClick={() => setBackup(null)}>
+                    סגור
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       </div>

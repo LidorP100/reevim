@@ -736,3 +736,10 @@ input.plain.bold {
     bottom: 50px;
   }
 }
+
+.backup {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

@@ -17,7 +17,7 @@ const TABS: [Tab, string][] = [
 ]
 
 function Shell() {
-  const { tab, setTab, data, update } = useStore()
+  const { tab, setTab, data, update, pending, closeAsk } = useStore()
   return (
     <div className="app">
       <header className="top">
@@ -47,6 +47,27 @@ function Shell() {
         {tab === 'trades' && <Trades />}
         {tab === 'structure' && <Structure />}
       </main>
+      {pending && (
+        <div className="modal-back" onClick={closeAsk}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{pending.msg}</h3>
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button
+                className="btn danger"
+                onClick={() => {
+                  pending.onYes()
+                  closeAsk()
+                }}
+              >
+                כן, המשך
+              </button>
+              <button className="btn" onClick={closeAsk}>
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

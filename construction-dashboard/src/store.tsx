@@ -31,6 +31,9 @@ interface Store {
   setSel: (s: Partial<Selection>) => void
   setDone: (taskIds: string[], day: number | null) => void
   resetAll: () => void
+  ask: (msg: string, onYes: () => void) => void
+  pending: { msg: string; onYes: () => void } | null
+  closeAsk: () => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -39,6 +42,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<ProjectData>(load)
   const [date, setDate] = useState(TODAY)
   const [tab, setTab] = useState<Tab>('overview')
+  const [pending, setPending] = useState<{ msg: string; onYes: () => void } | null>(null)
   const [sel, setSelState] = useState<Selection>({ lotId: null, buildingId: null, aptId: null })
 
   useEffect(() => {
@@ -64,8 +68,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   )
   const resetAll = useCallback(() => setData(defaultData()), [])
+  const ask = useCallback((msg: string, onYes: () => void) => setPending({ msg, onYes }), [])
+  const closeAsk = useCallback(() => setPending(null), [])
 
-  const value: Store = { data, update, model, done, date, setDate, tab, setTab, sel, setSel, setDone, resetAll }
+  const value: Store = { data, update, model, done, date, setDate, tab, setTab, sel, setSel, setDone, resetAll, ask, pending, closeAsk }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
