@@ -210,6 +210,16 @@ export function AptDrawer() {
             >
               <Icon name="grid" size={16} /> פתח במטריצה
             </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setSel({ lotId: b.lotId, buildingId: null, aptId: null })
+                setTab('drawings')
+                openApt(null)
+              }}
+            >
+              <Icon name="layers" size={16} /> תוכניות המגרש
+            </button>
           </div>
         </div>
       </aside>

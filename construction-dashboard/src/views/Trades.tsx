@@ -7,7 +7,7 @@ import { Bar, Icon } from '../components/ui'
 const PALETTE = ['#2f7fc1', '#e0a526', '#c46b4b', '#5a8a3c', '#9c6bc4', '#3c8a7e', '#d68fb0', '#8a5a2b', '#5b6cc9', '#c9a20e']
 
 export function Trades() {
-  const { model, update, data, ask, done, date, canWrite } = useStore()
+  const { model, update, data, ask, done, date, canWrite, contractorFor } = useStore()
   const trades = model.trades
   const last = trades[trades.length - 1]
   const [form, setForm] = useState({ name: '', level: 'apt' as Level, after: last?.id ?? '', color: PALETTE[trades.length % PALETTE.length], contractor: '' })
@@ -59,7 +59,6 @@ export function Trades() {
             }}
           >
             <input id="trade-name" type="text" placeholder="שם המלאכה, למשל: גבס" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <input id="trade-contractor" type="text" placeholder="קבלן (לא חובה)" value={form.contractor} onChange={(e) => setForm({ ...form, contractor: e.target.value })} style={{ maxWidth: 200 }} />
             <select id="trade-level" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value as Level })}>
               <option value="apt">לכל דירה</option>
               <option value="floor">לכל קומה</option>
@@ -86,7 +85,7 @@ export function Trades() {
       <section className="card">
         <div className="card-head">
           <h3>מלאכות ({trades.length})</h3>
-          <span className="muted small">הסדר נקבע לפי ״מגיעה אחרי״</span>
+          <span className="muted small">הסדר נקבע לפי ״מגיעה אחרי״ · קבלנים מנוהלים במסך קבלנים ותקציב</span>
         </div>
         <div className="table-wrap">
           <table className="list">
@@ -98,7 +97,6 @@ export function Trades() {
                 <th>רמה</th>
                 <th>מגיעה אחרי</th>
                 <th>קבלן</th>
-                <th>טלפון</th>
                 <th style={{ minWidth: 140 }}>ביצוע</th>
                 <th />
               </tr>
@@ -133,12 +131,7 @@ export function Trades() {
                           ))}
                       </select>
                     </td>
-                    <td style={{ minWidth: 130 }}>
-                      <input className="plain" placeholder="—" value={t.contractor ?? ''} onChange={(e) => patch(t.id, { contractor: e.target.value })} disabled={!canWrite} aria-label="קבלן" />
-                    </td>
-                    <td style={{ minWidth: 110 }}>
-                      <input className="plain" placeholder="—" dir="ltr" value={t.phone ?? ''} onChange={(e) => patch(t.id, { phone: e.target.value })} disabled={!canWrite} aria-label="טלפון" />
-                    </td>
+                    <td className="small">{contractorFor(t.id)?.name ?? <span className="muted">—</span>}</td>
                     <td>
                       <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                         <Bar pct={c.pct} color={t.color} />

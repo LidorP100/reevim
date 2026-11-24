@@ -14,6 +14,8 @@ import { Report } from './views/Report'
 import { Trades } from './views/Trades'
 import { Structure } from './views/Structure'
 import { Site3D } from './views/Site3D'
+import { Drawings } from './views/Drawings'
+import { Contractors } from './views/Contractors'
 
 
 interface PageDef {
@@ -32,8 +34,10 @@ export const PAGES: PageDef[] = [
   { id: 'flowline', label: 'קו זרימה', icon: 'flow', sub: 'התקדמות כל מלאכה בין הקומות לאורך זמן', group: 'ניתוח', timeline: true },
   { id: 'charts', label: 'גרפים', icon: 'chart', sub: 'התקדמות, קצב ותחזית', group: 'ניתוח', timeline: true },
   { id: 'report', label: 'דוח שבועי', icon: 'report', sub: 'מה בוצע השבוע — מוכן לשליחה', group: 'ניתוח', timeline: true },
-  { id: 'defects', label: 'ליקויים', icon: 'alert', sub: 'ליקויים פתוחים וסגורים לפי דירה', group: 'איכות', timeline: false },
-  { id: 'trades', label: 'מלאכות וקבלנים', icon: 'tools', sub: 'רשימת המלאכות, סדר ביצוע וקבלנים', group: 'הגדרות', timeline: false },
+  { id: 'defects', label: 'ליקויים', icon: 'alert', sub: 'ליקויים פתוחים וסגורים לפי דירה', group: 'איכות ומסמכים', timeline: false },
+  { id: 'drawings', label: 'תוכניות', icon: 'layers', sub: 'חזיתות, חתכים ותוכניות לכל מגרש', group: 'איכות ומסמכים', timeline: false },
+  { id: 'contractors', label: 'קבלנים ותקציב', icon: 'users', sub: 'קבלנים לפי מקצוע, חוזים, חשבונות חודשיים ויתרה', group: 'ניהול', timeline: true },
+  { id: 'trades', label: 'מלאכות', icon: 'tools', sub: 'רשימת המלאכות וסדר הביצוע', group: 'הגדרות', timeline: false },
   { id: 'structure', label: 'מבנה הפרויקט', icon: 'building', sub: 'מגרשים, בניינים וחלוקת דירות לקומות', group: 'הגדרות', timeline: false },
 ]
 const MOBILE: Tab[] = ['overview', 'site3d', 'matrix', 'board']
@@ -157,6 +161,8 @@ function Shell() {
               {tab === 'charts' && <Charts />}
               {tab === 'report' && <Report />}
               {tab === 'defects' && <Defects />}
+              {tab === 'drawings' && <Drawings />}
+              {tab === 'contractors' && <Contractors />}
               {tab === 'trades' && <Trades />}
               {tab === 'structure' && <Structure />}
             </div>

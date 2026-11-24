@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AptInfo, Defect, Mark, Marks, ProjectData, Selection } from './types'
+import type { AptInfo, Contractor, Defect, Drawing, Mark, Marks, ProjectData, Selection } from './types'
 import { defaultData } from './sample'
 import { buildDone, buildModel, type DoneIndex, type Model } from './engine'
 import { TODAY } from './date'
 import { connectBackend, type Backend, type RemoteState, type SyncStatus } from './backend'
 
-export type Tab = 'overview' | 'site3d' | 'matrix' | 'board' | 'flowline' | 'charts' | 'defects' | 'report' | 'trades' | 'structure'
+export type Tab = 'overview' | 'site3d' | 'matrix' | 'board' | 'flowline' | 'charts' | 'defects' | 'report' | 'drawings' | 'contractors' | 'trades' | 'structure'
 
-const TABS: Tab[] = ['overview', 'site3d', 'matrix', 'board', 'flowline', 'charts', 'defects', 'report', 'trades', 'structure']
+const TABS: Tab[] = ['overview', 'site3d', 'matrix', 'board', 'flowline', 'charts', 'defects', 'report', 'drawings', 'contractors', 'trades', 'structure']
 
 export interface Toast {
   id: number
@@ -50,11 +50,17 @@ interface Store {
   createProject: () => void
   names: Record<string, string>
   userId: string | null
+  drawings: Drawing[]
+  saveDrawing: (d: Drawing, remove?: boolean) => void
+  upload: ((file: Blob) => Promise<string | null>) | null
+  contractors: Contractor[]
+  saveContractor: (c: Contractor, remove?: boolean) => void
+  contractorFor: (tradeId: string) => Contractor | undefined
 }
 
 const Ctx = createContext<Store | null>(null)
 
-const EMPTY: RemoteState = { loaded: false, project: null, marks: {}, aptInfo: {}, defects: {} }
+const EMPTY: RemoteState = { loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [] }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [backend, setBackend] = useState<Backend | null>(null)
@@ -229,6 +235,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [backend, denied],
   )
 
+  const saveDrawing = useCallback(
+    (d: Drawing, remove?: boolean) => {
+      if (!backend) return
+      if (!backend.canWrite) return denied()
+      backend.saveDrawing(d, remove)
+    },
+    [backend, denied],
+  )
+  const drawings = useMemo(() => [...remote.drawings].sort((a, b) => a.title.localeCompare(b.title, 'he')), [remote.drawings])
+  const saveContractor = useCallback(
+    (c: Contractor, remove?: boolean) => {
+      if (!backend) return
+      if (!backend.canWrite) return denied()
+      backend.saveContractor(c, remove)
+    },
+    [backend, denied],
+  )
+  const contractors = useMemo(() => [...remote.contractors].sort((a, b) => a.name.localeCompare(b.name, 'he')), [remote.contractors])
+  const contractorFor = useCallback((tradeId: string) => contractors.find((c) => c.trades.includes(tradeId)), [contractors])
   const resetAll = useCallback(() => backend?.reset(), [backend])
   const createProject = useCallback(() => backend?.saveProject(defaultData()), [backend])
   const ask = useCallback((msg: string, onYes: () => void) => setPending({ msg, onYes }), [])
@@ -268,6 +293,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     createProject,
     names,
     userId: backend?.userId ?? null,
+    drawings,
+    saveDrawing,
+    upload: backend?.upload ?? null,
+    contractors,
+    saveContractor,
+    contractorFor,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

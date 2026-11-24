@@ -5,7 +5,7 @@ import { fmt } from '../date'
 import { Icon } from '../components/ui'
 
 export function Board() {
-  const { model, done, date, setSel, setTab, toast } = useStore()
+  const { model, done, date, setSel, setTab, toast, contractorFor } = useStore()
   const [lotId, setLotId] = useState<string>('')
   const [onlyStuck, setOnlyStuck] = useState(false)
 
@@ -49,7 +49,7 @@ export function Board() {
     lines.push('', `סה״כ ${c.n} ${c.t.level === 'floor' ? 'קומות' : 'דירות'}`)
     const text = lines.join('\n')
     navigator.clipboard?.writeText(text).then(
-      () => toast({ kind: 'ok', text: `הרשימה ל${c.t.contractor ? c.t.contractor : c.t.name} הועתקה — אפשר להדביק בוואטסאפ` }),
+      () => toast({ kind: 'ok', text: `הרשימה ל${contractorFor(c.t.id)?.name ?? c.t.contractor ?? c.t.name} הועתקה — אפשר להדביק בוואטסאפ` }),
       () => toast({ kind: 'warn', text: 'ההעתקה נחסמה בדפדפן הזה' }),
     )
   }
@@ -88,7 +88,7 @@ export function Board() {
               <div className="card-head" style={{ marginBottom: 0 }}>
                 <div>
                   <h3 style={{ margin: 0 }}>{c.t.name}</h3>
-                  <span className="muted small">{c.t.contractor ? `קבלן: ${c.t.contractor}` : 'לא הוגדר קבלן'}</span>
+                  <span className="muted small">{contractorFor(c.t.id) ? `קבלן: ${contractorFor(c.t.id)!.name}${contractorFor(c.t.id)!.phone ? ` · ${contractorFor(c.t.id)!.phone}` : ''}` : c.t.contractor ? `קבלן: ${c.t.contractor}` : 'לא הוגדר קבלן'}</span>
                 </div>
                 <div style={{ textAlign: 'end' }}>
                   <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, lineHeight: 1 }}>{c.n}</div>

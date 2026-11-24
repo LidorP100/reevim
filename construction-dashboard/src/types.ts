@@ -75,6 +75,42 @@ export interface Defect {
   by?: string
 }
 
+export interface Invoice {
+  month: string // YYYY-MM
+  amount: number
+  note?: string
+  created: number
+}
+
+/** קבלן משנה: מקצוע/ות, טלפון, סעיף תקציב וסכום חוזה, וחשבונות חודשיים */
+export interface Contractor {
+  id: string
+  name: string
+  trades: string[]
+  phone?: string
+  contact?: string
+  code?: string // סעיף תקציב
+  budget: number
+  notes?: string
+  invoices: Record<string, Invoice | null>
+  created: number
+}
+
+export interface Drawing {
+  id: string
+  lotId: string
+  title: string
+  kind?: string // חזיתות וחתכים, תנוחה, וכו׳
+  img?: string // כתובת תמונה (ניתנת לזום)
+  tiles?: string[] // תמונה גדולה מחולקת לרצועות אנכיות
+  tileW?: number
+  thumb?: string
+  pdf?: string // הקובץ המקורי
+  w?: number
+  h?: number
+  created: number
+}
+
 export interface ProjectData {
   projectName: string
   lots: Lot[]

@@ -14,7 +14,7 @@ import type { Building } from '../types'
 const APT_W = 8
 const APT_D = 9
 const CORE_W = 4.5
-const FLOOR_H = 3.1
+const FLOOR_H = 3.06 // לפי החתכים: 2.71 נטו + תקרה
 const SLAB_H = 0.32
 
 type Mode = 'viz' | 'status' | 'trade'
@@ -104,6 +104,26 @@ function aptLocal(p: Placed, idx: number, nOnFloor: number) {
 }
 
 const box = new THREE.BoxGeometry(1, 1, 1)
+/** טקסטורת אבן עם פסים אופקיים, כמו בחזיתות */
+let stoneTex: THREE.Texture | null = null
+function stone() {
+  if (stoneTex) return stoneTex
+  const c = document.createElement('canvas')
+  c.width = 64
+  c.height = 64
+  const g = c.getContext('2d')!
+  g.fillStyle = '#ffffff'
+  g.fillRect(0, 0, 64, 64)
+  g.fillStyle = 'rgba(0,0,0,0.13)'
+  for (let y = 0; y < 64; y += 16) g.fillRect(0, y, 64, 1.5)
+  g.fillStyle = 'rgba(0,0,0,0.05)'
+  for (let y = 0; y < 64; y += 16) for (let x = (y / 16) % 2 ? 0 : 24; x < 64; x += 48) g.fillRect(x, y, 1.2, 16)
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(2, 2)
+  t.colorSpace = THREE.SRGBColorSpace
+  return (stoneTex = t)
+}
 const plane = new THREE.PlaneGeometry(1, 1)
 
 // ---------- פלטות צבע ----------
@@ -114,6 +134,10 @@ const C = {
   delivered: '#fbfaf6',
   ghost: '#d8dee5',
   balcony: '#2c3035',
+  frame: '#1b1d20',
+  grayStone: '#a9adb1',
+  pentStone: '#7e8287',
+  glass: '#86a9c2',
   glassDay: '#3d5670',
   opening: '#26292d',
   lit: '#ffc978',
@@ -403,6 +427,8 @@ function Crane({ x, z, h }: { x: number; z: number; h: number }) {
 }
 
 interface AptState {
+  pent: boolean
+  textured: boolean
   show: boolean
   color: string
   opacity: number
@@ -499,12 +525,16 @@ const BuildingMesh = memo(function BuildingMesh({
               const loc = aptLocal(p, i, n)
               const isSel = selectedApt === id
               const ay = y + SLAB_H + (FLOOR_H - SLAB_H) / 2
+              const pent = viz && s.pent
+              const depth = pent ? APT_D * 0.66 : APT_D - 0.2
+              const shift = pent ? -loc.face * APT_D * 0.17 : 0
               return (
                 <group key={id} position={[loc.x, ay, loc.z]}>
                   <Grow from={viz ? 0 : 1}>
                     <mesh
                       geometry={box}
-                      scale={[APT_W - 0.2, FLOOR_H - SLAB_H, APT_D - 0.2]}
+                      position={[0, 0, shift]}
+                      scale={[APT_W - 0.2, FLOOR_H - SLAB_H, depth]}
                       castShadow
                       receiveShadow
                       onClick={(e: ThreeEvent<MouseEvent>) => {
@@ -517,11 +547,11 @@ const BuildingMesh = memo(function BuildingMesh({
                       }}
                       onPointerOut={() => onHover(null)}
                     >
-                      <meshStandardMaterial color={isSel ? '#3d7bff' : s.color} emissive={isSel ? '#173a88' : '#000'} transparent={s.opacity < 1} opacity={s.opacity} roughness={0.85} />
+                      <meshStandardMaterial color={isSel ? '#3d7bff' : s.color} map={s.textured && !isSel ? stone() : null} emissive={isSel ? '#173a88' : '#000'} transparent={s.opacity < 1} opacity={s.opacity} roughness={0.85} />
                     </mesh>
                   </Grow>
                   {s.windows !== 'none' && (
-                    <mesh geometry={plane} position={[0, 0.05, loc.face * (APT_D / 2 - 0.05)]} rotation-y={loc.face > 0 ? 0 : Math.PI} scale={[APT_W * 0.6, 1.75, 1]}>
+                    <mesh geometry={plane} position={[0, 0.05, shift + loc.face * (depth / 2 + 0.03)]} rotation-y={loc.face > 0 ? 0 : Math.PI} scale={[APT_W * (pent ? 0.75 : 0.6), pent ? 2.1 : 1.75, 1]}>
                       <meshStandardMaterial
                         color={s.windows === 'lit' ? C.lit : s.windows === 'glass' ? C.glassDay : C.opening}
                         emissive={s.windows === 'lit' ? '#ffae4a' : '#000'}
@@ -532,15 +562,22 @@ const BuildingMesh = memo(function BuildingMesh({
                       />
                     </mesh>
                   )}
-                  {s.balcony && (
+                  {s.balcony && !pent && (
                     <>
-                      <mesh geometry={box} position={[-APT_W * 0.12, -(FLOOR_H - SLAB_H) / 2 + 0.1, loc.face * (APT_D / 2 + 0.8)]} scale={[APT_W * 0.62, 0.22, 1.6]} castShadow>
-                        <meshStandardMaterial color={C.balcony} />
+                      <mesh geometry={box} position={[-APT_W * 0.08, -(FLOOR_H - SLAB_H) / 2 + 0.1, loc.face * (APT_D / 2 + 0.8)]} scale={[APT_W * 0.7, 0.24, 1.6]} castShadow>
+                        <meshStandardMaterial color="#d8d5ce" />
                       </mesh>
-                      <mesh geometry={box} position={[-APT_W * 0.12 + APT_W * 0.31, 0, loc.face * (APT_D / 2 + 0.8)]} scale={[0.25, FLOOR_H - SLAB_H, 1.6]}>
-                        <meshStandardMaterial color={C.balcony} />
-                      </mesh>
+                      {s.windows !== 'opening' && s.windows !== 'none' && (
+                        <mesh geometry={box} position={[-APT_W * 0.08, -(FLOOR_H - SLAB_H) / 2 + 0.75, loc.face * (APT_D / 2 + 1.58)]} scale={[APT_W * 0.7, 1.05, 0.05]}>
+                          <meshStandardMaterial color={C.glass} transparent opacity={0.45} metalness={0.3} roughness={0.1} />
+                        </mesh>
+                      )}
                     </>
+                  )}
+                  {pent && s.windows !== 'none' && s.windows !== 'opening' && (
+                    <mesh geometry={box} position={[0, -(FLOOR_H - SLAB_H) / 2 + 0.55, loc.face * (APT_D / 2 - 0.1)]} scale={[APT_W - 0.2, 1.05, 0.05]}>
+                      <meshStandardMaterial color={C.glass} transparent opacity={0.45} metalness={0.3} roughness={0.1} />
+                    </mesh>
                   )}
                 </group>
               )
@@ -548,13 +585,38 @@ const BuildingMesh = memo(function BuildingMesh({
           </group>
         )
       })}
+      {viz && shellDone && b.floors >= 3 && (() => {
+        const twoRows = Math.max(...p.perFloor) > 2
+        const faceZ = twoRows ? APT_D + 1.2 : APT_D / 2
+        const top = (b.floors >= 4 ? b.floors - 1 : b.floors) * FLOOR_H
+        const x1 = -w / 2 + 0.3
+        const x2 = w / 2 - CORE_W - 0.1
+        const zw = x2 - x1
+        const hh = top - FLOOR_H
+        return [1, -1].map((side) => (
+          <group key={side} position={[0, 0, side * (faceZ + 0.85)]}>
+            <mesh geometry={box} position={[x1, FLOOR_H + hh / 2, 0]} scale={[0.6, hh, 1.75]} castShadow>
+              <meshStandardMaterial color={C.frame} roughness={0.6} />
+            </mesh>
+            <mesh geometry={box} position={[x2, FLOOR_H + hh / 2, 0]} scale={[0.6, hh, 1.75]} castShadow>
+              <meshStandardMaterial color={C.frame} roughness={0.6} />
+            </mesh>
+            <mesh geometry={box} position={[(x1 + x2) / 2, top - 0.2, 0]} scale={[zw + 0.6, 0.5, 1.75]} castShadow>
+              <meshStandardMaterial color={C.frame} roughness={0.6} />
+            </mesh>
+            <mesh geometry={box} position={[(x1 + x2) / 2, FLOOR_H + 0.05, 0]} scale={[zw + 0.6, 0.35, 1.75]}>
+              <meshStandardMaterial color={C.frame} roughness={0.6} />
+            </mesh>
+          </group>
+        ))
+      })()}
       {viz && topWalls && maxF === b.floors - 1 && (
         <Grow>
           <mesh geometry={box} position={[0, H + SLAB_H / 2, 0]} scale={[w + 0.6, SLAB_H * 1.5, d + 0.6]} castShadow>
             <meshStandardMaterial color="#e7e4de" />
           </mesh>
-          <mesh geometry={box} position={[w / 2 - CORE_W / 2, H + 1.4, 0]} scale={[CORE_W, 2.6, 5]} castShadow>
-            <meshStandardMaterial color="#efece6" />
+          <mesh geometry={box} position={[w / 2 - CORE_W / 2, H + 1.9, 0]} scale={[CORE_W, 3.6, 5]} castShadow>
+            <meshStandardMaterial color="#efece6" map={stone()} />
           </mesh>
           <mesh geometry={box} position={[-w / 4, H + 0.7, 0]} scale={[w * 0.35, 0.12, d * 0.4]} rotation-x={-0.2}>
             <meshStandardMaterial color="#20324a" metalness={0.5} roughness={0.3} />
@@ -600,14 +662,21 @@ export function Site3D() {
         const blocks = has('blocks') ? ok('blocks', fu) : walls
         const onFloor = bApts.filter((a) => a.floor === f)
         aptIds.push(onFloor.map((a) => a.id))
+        const nOn = onFloor.length
+        const pentFloor = b.floors >= 4 && f === b.floors - 1
         for (const a of onFloor) {
-          const s: AptState = { show: true, color: C.ghost, opacity: 1, windows: 'none', balcony: false }
+          const s: AptState = { show: true, color: C.ghost, opacity: 1, windows: 'none', balcony: false, pent: false, textured: false }
           if (mode === 'viz') {
             if (!fs.walls) s.show = false
             else {
               const fin = aptTradeIds.length ? aptTradeIds.filter((t) => ok(t, a.id)).length / aptTradeIds.length : 0
               const delivered = has('handover') && ok('handover', a.id)
-              s.color = delivered ? C.delivered : fin > 0 ? lerpColor(C.blocks, C.white, Math.min(1, fin * 1.6)) : blocks ? C.blocks : C.concrete
+              // חיפוי לפי החזיתות: פנטהאוז באבן אפורה כהה, אזור המרפסות הקדמי באבן אפורה, השאר אבן בהירה
+              const front = aptLocal(p, a.idx, nOn).face > 0
+              const facade = pentFloor ? C.pentStone : front && f >= 1 ? C.grayStone : C.white
+              s.pent = pentFloor
+              s.textured = fin > 0.3 && facade === C.white
+              s.color = delivered ? (facade === C.white ? C.delivered : facade) : fin > 0 ? lerpColor(C.blocks, facade, Math.min(1, fin * 1.6)) : blocks ? C.blocks : C.concrete
               const alu = has('alu') ? ok('alu', a.id) : fin > 0.6
               s.windows = alu ? (delivered && tod !== 'day' ? 'lit' : 'glass') : blocks ? 'opening' : 'none'
               s.balcony = blocks
@@ -636,7 +705,7 @@ export function Site3D() {
     let dist: number
     if (p) {
       target = new THREE.Vector3(p.x, (p.b.floors * FLOOR_H) / 2, p.z)
-      dist = 55 + p.b.floors * 3
+      dist = 80 + p.b.floors * 4
     } else if (sel.lotId) {
       const pl = plates.find((x) => x.id === sel.lotId)
       const r = pl?.rects[0]

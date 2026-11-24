@@ -8,7 +8,7 @@
  *   apts/<buildingId>       — { info: { [aptId]: AptInfo } }
  *   defects/<buildingId>    — { items: { [defectId]: Defect | null } }
  */
-import type { AptInfo, Defect, Marks, ProjectData } from './types'
+import type { AptInfo, Contractor, Defect, Drawing, Marks, ProjectData } from './types'
 import { defaultData } from './sample'
 
 export interface RemoteState {
@@ -17,6 +17,8 @@ export interface RemoteState {
   marks: Record<string, Marks>
   aptInfo: Record<string, Record<string, AptInfo>>
   defects: Record<string, Record<string, Defect | null>>
+  drawings: Drawing[]
+  contractors: Contractor[]
 }
 
 export type SyncStatus = 'local' | 'connecting' | 'live' | 'saving' | 'offline' | 'readonly'
@@ -32,9 +34,13 @@ export interface Backend {
   saveDefect(buildingId: string, id: string, d: Defect | null): void
   names(ids: string[]): Promise<Record<string, string>>
   reset(): void
+  saveDrawing(d: Drawing, remove?: boolean): void
+  saveContractor(c: Contractor, remove?: boolean): void
+  /** העלאת קובץ (רק לעורכים במצב משותף). מחזיר כתובת או null */
+  upload: ((file: Blob) => Promise<string | null>) | null
 }
 
-const emptyState = (): RemoteState => ({ loaded: false, project: null, marks: {}, aptInfo: {}, defects: {} })
+const emptyState = (): RemoteState => ({ loaded: false, project: null, marks: {}, aptInfo: {}, defects: {}, drawings: [], contractors: [] })
 
 // ---------------- מקומי ----------------
 
@@ -78,6 +84,11 @@ function localBackend(): Backend {
     saveDefect: (b, id, d) => commit({ ...state, defects: { ...state.defects, [b]: { ...state.defects[b], [id]: d } } }),
     names: async () => ({}),
     reset: () => commit({ ...emptyState(), loaded: true, project: defaultData() }),
+    saveDrawing: (d, remove) =>
+      commit({ ...state, drawings: remove ? state.drawings.filter((x) => x.id !== d.id) : [...state.drawings.filter((x) => x.id !== d.id), d] }),
+    upload: null,
+    saveContractor: (c, remove) =>
+      commit({ ...state, contractors: remove ? state.contractors.filter((x) => x.id !== c.id) : [...state.contractors.filter((x) => x.id !== c.id), c] }),
   }
 }
 
@@ -87,7 +98,7 @@ function localBackend(): Backend {
 type AnyDb = any
 type AnyUser = any
 
-function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, canWrite: boolean): Backend {
+function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, canWrite: boolean, assets: any | null): Backend {
   let state: RemoteState = emptyState()
   const listeners = new Set<(s: RemoteState) => void>()
   let statusCb: (s: SyncStatus) => void = () => {}
@@ -160,7 +171,7 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
       statusCb = status
       status('connecting')
       let got = 0
-      const need = 4
+      const need = 6
       const timer = setTimeout(() => {
         if (!state.loaded) status('offline')
       }, 10000)
@@ -197,6 +208,18 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
           const defects: Record<string, Record<string, Defect | null>> = {}
           for (const d of q.docs) defects[d.id] = (d.data()?.items ?? {}) as Record<string, Defect | null>
           state = { ...state, defects }
+          ready(q.metadata)
+          emit()
+        }, fail),
+        db.collection('drawings').onSnapshot((q: any) => {
+          const drawings = q.docs.map((d: any) => ({ ...(d.data() as Drawing), id: d.id }))
+          state = { ...state, drawings }
+          ready(q.metadata)
+          emit()
+        }, fail),
+        db.collection('contractors').onSnapshot((q: any) => {
+          const contractors = q.docs.map((d: any) => ({ ...(d.data() as Contractor), id: d.id }))
+          state = { ...state, contractors }
           ready(q.metadata)
           emit()
         }, fail),
@@ -242,6 +265,24 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
     reset() {
       this.saveProject(defaultData())
     },
+    saveDrawing(d, remove) {
+      state = { ...state, drawings: remove ? state.drawings.filter((x) => x.id !== d.id) : [...state.drawings.filter((x) => x.id !== d.id), d] }
+      emit()
+      if (remove) void db.doc(`drawings/${d.id}`).delete().catch(() => window.dispatchEvent(new CustomEvent('cd-write-error', { detail: 'error' })))
+      else queue(`drawings/${d.id}`, JSON.parse(JSON.stringify(d)), true)
+    },
+    saveContractor(c, remove) {
+      state = { ...state, contractors: remove ? state.contractors.filter((x) => x.id !== c.id) : [...state.contractors.filter((x) => x.id !== c.id), c] }
+      emit()
+      if (remove) void db.doc(`contractors/${c.id}`).delete().catch(() => window.dispatchEvent(new CustomEvent('cd-write-error', { detail: 'error' })))
+      else queue(`contractors/${c.id}`, JSON.parse(JSON.stringify(c)), true)
+    },
+    upload: assets
+      ? async (file: Blob) => {
+          const r = await assets.upload(file)
+          return (r?.url as string) ?? null
+        }
+      : null,
   }
 }
 
@@ -250,7 +291,7 @@ export async function connectBackend(): Promise<Backend> {
   const c = (window as any).claude
   if (!c?.use) return localBackend()
   try {
-    const [db, user] = await Promise.all([c.use('db'), c.use('user')])
+    const [db, user, assets] = await Promise.all([c.use('db'), c.use('user'), c.use('assets').catch(() => null)])
     if (!db) return localBackend()
     let userId: string | null = null
     let canWrite = true
@@ -267,7 +308,7 @@ export async function connectBackend(): Promise<Backend> {
         /* ignore */
       }
     }
-    return sharedBackend(db, user, userId, canWrite)
+    return sharedBackend(db, user, userId, canWrite, assets)
   } catch {
     return localBackend()
   }
