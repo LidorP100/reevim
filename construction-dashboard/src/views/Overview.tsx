@@ -7,7 +7,7 @@ import { exportApartments } from '../exporters'
 
 export function Overview() {
   const store = useStore()
-  const { model, done, date, setSel, setTab, marks, names, defects, openApt, data } = store
+  const { model, done, date, setSel, setTab, marks, names, defects, openApt, data, canWrite, ask, resetTrades } = store
 
   const s = useMemo(() => {
     const total = countDone(done, model.tasks, date)
@@ -48,7 +48,7 @@ export function Overview() {
     }
     const feed = [...groups.values()].sort((a, b) => b.day - a.day).slice(0, 9)
     let plan: { planned: number; late: number; worst: { id: string; n: number; gap: number }[] } | null = null
-    if (data.planOn) {
+    if (data.planOn && !data.sampleOn) {
       const late = lateTasks(done, model.tasks, date)
       const byB = new Map<string, number>()
       for (const t of late) byB.set(t.buildingId, (byB.get(t.buildingId) ?? 0) + 1)
@@ -62,7 +62,7 @@ export function Overview() {
       plan = { planned: plannedPct(model.tasks, date), late: late.length, worst }
     }
     return { total, fc, aptsDone, shellDone, ready: ready.size, stuck, perBuilding, perTrade, feed, plan }
-  }, [model, done, date, marks, data.planOn])
+  }, [model, done, date, marks, data.planOn, data.sampleOn])
 
   const openBuilding = (id: string) => {
     const b = model.buildingById.get(id)!
@@ -73,6 +73,22 @@ export function Overview() {
 
   return (
     <>
+      {data.sampleOn && (
+        <section className="card demo-banner">
+          <Icon name="building" size={22} />
+          <div>
+            <b>מוצג כרגע פרויקט שלם להדמיה</b>
+            <div className="muted small">
+              כל 30 הבניינים מוצגים גמורים, וציר הזמן מראה את הבנייה מההתחלה. כשמתחילים לעבוד באמת — מאפסים את כל המלאכות, ומאז כל יציקה או מלאכה שמסמנים נבנית בתלת מימד. לוח הזמנים המתוכנן מתחיל בחפירת החניונים באפריל 2027.
+            </div>
+          </div>
+          {canWrite && (
+            <button className="btn danger" onClick={() => ask('לאפס את כל המלאכות? הפרויקט יוצג ריק, וכל סימוני הביצוע יימחקו.', resetTrades)}>
+              <Icon name="refresh" size={15} /> אפס את כל המלאכות
+            </button>
+          )}
+        </section>
+      )}
       <section className="card hero">
         <Ring pct={s.total.pct} label={<CountUp value={s.total.pct} decimals={1} suffix="%" />} sub="ביצוע כולל" />
         <div className="hero-facts stagger">

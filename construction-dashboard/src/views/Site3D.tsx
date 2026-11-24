@@ -3,10 +3,11 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, Sky, Stars } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../store'
-import { aptsPerFloor, countDone, floorLabel, floorUnit, isDone, lerpColor, pctColor, taskIdOf, tasksForApt, type Model } from '../engine'
+import { aptsPerFloor, buildingUnit, countDone, floorLabel, floorUnit, isDone, lerpColor, pctColor, taskIdOf, tasksForApt, type Model } from '../engine'
 import { elevOf, PLAN_BUILDINGS, PLAN_CENTER, PLAN_LOTS, PLAN_SCALE } from '../sample'
 import { loadIfc, type ParsedIfc } from '../ifc'
-import { fmt } from '../date'
+import { AkkoBackdrop, PostFX, SoftEnvironment } from './SceneExtras'
+import { fmt, TODAY } from '../date'
 import { ScopePicker } from '../components/ScopePicker'
 import { Icon } from '../components/ui'
 import type { Building } from '../types'
@@ -225,12 +226,12 @@ function Atmosphere({ tod, size, mode }: { tod: TimeOfDay; size: number; mode: M
         </>
       )}
       {!viz && <color attach="background" args={[tod === 'night' ? '#0f151d' : '#e9eef3']} />}
-      {viz && <fog attach="fog" args={[fog, size * 0.9, size * 3.2]} />}
-      <hemisphereLight args={[tod === 'night' ? '#30406a' : tod === 'sunset' ? '#ffe6d2' : '#ffffff', tod === 'night' ? '#0b0f18' : '#8a8f7a', tod === 'night' ? 0.4 : tod === 'sunset' ? 1.15 : 1.1]} />
-      <ambientLight intensity={tod === 'night' ? 0.12 : 0.22} />
+      {viz && <fog attach="fog" args={[fog, size * 1.4, size * 7.5]} />}
+      <hemisphereLight args={[tod === 'night' ? '#6f80b8' : tod === 'sunset' ? '#ffe6d2' : '#ffffff', tod === 'night' ? '#1a2030' : '#8a8f7a', tod === 'night' ? 0.85 : tod === 'sunset' ? 1.15 : 1.1]} />
+      <ambientLight intensity={tod === 'night' ? 0.3 : 0.22} />
       <directionalLight
         position={sun}
-        intensity={tod === 'night' ? 0.25 : tod === 'sunset' ? 2.3 : 2.2}
+        intensity={tod === 'night' ? 0.55 : tod === 'sunset' ? 2.3 : 2.2}
         color={tod === 'sunset' ? '#ffcda0' : tod === 'night' ? '#8ea6ff' : '#ffffff'}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -385,7 +386,7 @@ const Landscape = memo(function Landscape({ plates, placed, size, tod, mode }: {
 
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position-y={-0.02} receiveShadow geometry={plane} scale={[size * 6, size * 6, 1]}>
+      <mesh rotation-x={-Math.PI / 2} position={[viz ? size * 3.45 : 0, -0.02, 0]} receiveShadow geometry={plane} scale={[viz ? size * 9 : size * 6, viz ? size * 16 : size * 6, 1]}>
         <meshStandardMaterial color={viz ? (tod === 'night' ? '#26331f' : C.grass) : tod === 'night' ? '#1a222b' : '#dfe4e0'} roughness={1} />
       </mesh>
       {roads.map((r, i) => (
@@ -450,6 +451,7 @@ function Crane({ x, z, h }: { x: number; z: number; h: number }) {
 }
 
 interface AptState {
+  pool: boolean
   pent: boolean
   textured: boolean
   show: boolean
@@ -458,13 +460,66 @@ interface AptState {
   windows: 'none' | 'opening' | 'glass' | 'lit'
   balcony: boolean
 }
+interface SiteState {
+  excav: boolean
+  parking: boolean
+  dev: boolean
+}
 interface FloorState {
   slab: boolean
   walls: boolean
   tradeDone: boolean
+  marble: boolean // חיפוי שיש בוצע בקומה
+  hpl: boolean // חיפוי HPL (המסגרת השחורה) בוצע בקומה
   pct: number // אחוז ביצוע של כל משימות הקומה
   fin: number // חלק הגמרים שבוצע בדירות הקומה
   tradeFrac: number // חלק הדירות בקומה שבהן המלאכה הנבחרת בוצעה
+}
+
+/** פיתוח סביב הבניין: גינה, גדר חיה, שביל כניסה, ערוגות פרחים וחניות */
+const CAR_COLORS = ['#e8e8e8', '#2b2f36', '#9aa3ad', '#7a1f1f', '#1f3a5f', '#c9c3b8']
+function Yard({ w, d, seed }: { w: number; d: number; seed: string }) {
+  let h = 0
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) | 0
+  const r = rng(h)
+  const hedge = '#3c6a33'
+  const W = w + 10
+  const D = d + 10
+  return (
+    <group>
+      <mesh geometry={box} position={[0, 0.08, 0]} scale={[W, 0.16, D]} receiveShadow>
+        <meshStandardMaterial color="#6f9a4f" roughness={1} />
+      </mesh>
+      <mesh geometry={box} position={[-w * 0.15, 0.18, D / 2 - 2.5]} scale={[3.2, 0.06, 5]} receiveShadow>
+        <meshStandardMaterial color="#e2dccf" roughness={0.9} />
+      </mesh>
+      {[
+        [0, D / 2 - 0.4, W, 0.8],
+        [0, -D / 2 + 0.4, W, 0.8],
+        [W / 2 - 0.4, 0, 0.8, D],
+        [-W / 2 + 0.4, 0, 0.8, D],
+      ].map(([x, z, sx, sz], i) => (
+        <mesh key={i} geometry={box} position={[x, 0.55, z]} scale={[sx, 0.9, sz]} castShadow>
+          <meshStandardMaterial color={hedge} roughness={1} />
+        </mesh>
+      ))}
+      {Array.from({ length: 6 }, (_, i) => (
+        <mesh key={'f' + i} geometry={box} position={[(r() - 0.5) * (W - 4), 0.3, (r() > 0.5 ? 1 : -1) * (D / 2 - 2.2)]} scale={[1.8 + r() * 2, 0.35, 1.1]}>
+          <meshStandardMaterial color={['#c25a8a', '#d98fb6', '#8e6cc4', '#e3b04b'][i % 4]} roughness={1} />
+        </mesh>
+      ))}
+      {Array.from({ length: 4 }, (_, i) => (
+        <group key={'c' + i} position={[W / 2 + 2.2, 0.55, -D / 2 + 3 + i * 3.2]}>
+          <mesh geometry={box} scale={[4.2, 0.8, 1.8]} castShadow>
+            <meshStandardMaterial color={CAR_COLORS[Math.abs(h + i) % CAR_COLORS.length]} metalness={0.6} roughness={0.35} />
+          </mesh>
+          <mesh geometry={box} position={[-0.2, 0.55, 0]} scale={[2.2, 0.5, 1.6]}>
+            <meshStandardMaterial color="#1c2733" metalness={0.5} roughness={0.2} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
 }
 
 const BuildingMesh = memo(function BuildingMesh({
@@ -482,7 +537,11 @@ const BuildingMesh = memo(function BuildingMesh({
   tod,
   onPick,
   onHover,
+  site,
+  marking,
 }: {
+  site: SiteState
+  marking: boolean
   p: Placed
   floors: FloorState[]
   apts: AptState[]
@@ -517,7 +576,18 @@ const BuildingMesh = memo(function BuildingMesh({
           {b.type ? <span style={{ opacity: 0.7 }}> · {b.type}</span> : null}
         </Html>
       )}
-      {viz && started && !shellDone && <Crane x={w / 2 + 4} z={-d / 2 - 3} h={H + 10} />}
+      {viz && (site.excav || started) && !shellDone && <Crane x={w / 2 + 4} z={-d / 2 - 3} h={H + 10} />}
+      {viz && site.excav && !site.parking && (
+        <mesh geometry={box} position={[0, -0.5, 0]} scale={[w + 7, 1.1, d + 7]} receiveShadow>
+          <meshStandardMaterial color="#5c4a36" roughness={1} />
+        </mesh>
+      )}
+      {viz && site.parking && !site.dev && (
+        <mesh geometry={box} position={[0, 0.05, 0]} scale={[w + 7, 0.3, d + 7]} receiveShadow>
+          <meshStandardMaterial color="#a3a7ab" roughness={0.95} />
+        </mesh>
+      )}
+      {viz && site.dev && <Yard w={w} d={d} seed={b.id} />}
 
       {floors.slice(0, maxF + 1).map((fs, f) => {
         const y = f * FLOOR_H
@@ -546,9 +616,28 @@ const BuildingMesh = memo(function BuildingMesh({
               </mesh>
             )}
             {floorApts.map((s, i) => {
-              if (!s.show) return null
               const id = ids[i]
               const loc = aptLocal(p, i, n)
+              if (!s.show)
+                return marking ? (
+                  <mesh
+                    key={id}
+                    geometry={box}
+                    position={[loc.x, y + FLOOR_H / 2, loc.z]}
+                    scale={[APT_W - 0.3, FLOOR_H - 0.2, APT_D - 0.3]}
+                    onClick={(e: ThreeEvent<MouseEvent>) => {
+                      e.stopPropagation()
+                      onPick(id)
+                    }}
+                    onPointerOver={(e) => {
+                      e.stopPropagation()
+                      onHover(id)
+                    }}
+                    onPointerOut={() => onHover(null)}
+                  >
+                    <meshStandardMaterial color="#3d7bff" transparent opacity={0.13} depthWrite={false} />
+                  </mesh>
+                ) : null
               const isSel = selectedApt === id
               const ay = y + SLAB_H + (FLOOR_H - SLAB_H) / 2
               const pent = viz && s.pent
@@ -588,6 +677,35 @@ const BuildingMesh = memo(function BuildingMesh({
                       />
                     </mesh>
                   )}
+                  {viz && s.windows !== 'none' && !pent && (
+                    <mesh geometry={plane} position={[APT_W * 0.36, 0.15, loc.face * (APT_D / 2 + 0.03)]} rotation-y={loc.face > 0 ? 0 : Math.PI} scale={[1.1, 1.35, 1]}>
+                      <meshStandardMaterial color={s.windows === 'lit' ? C.lit : s.windows === 'glass' ? C.glassDay : C.opening} emissive={s.windows === 'lit' ? '#ffae4a' : '#000'} emissiveIntensity={s.windows === 'lit' ? 1.6 : 0} toneMapped={s.windows !== 'lit'} metalness={0.3} roughness={0.2} />
+                    </mesh>
+                  )}
+                  {viz && s.windows !== 'none' && Math.abs(loc.x - (-p.w / 2 + APT_W / 2)) < 0.01 && (
+                    <mesh geometry={plane} position={[-APT_W / 2 + 0.07, 0.15, shift]} rotation-y={-Math.PI / 2} scale={[1.2, 1.4, 1]}>
+                      <meshStandardMaterial color={s.windows === 'lit' ? C.lit : s.windows === 'glass' ? C.glassDay : C.opening} emissive={s.windows === 'lit' ? '#ffae4a' : '#000'} emissiveIntensity={s.windows === 'lit' ? 1.6 : 0} toneMapped={s.windows !== 'lit'} metalness={0.3} roughness={0.2} />
+                    </mesh>
+                  )}
+                  {viz && s.balcony && !pent && s.windows === 'lit' && (
+                    <mesh geometry={box} position={[-APT_W * 0.08, (FLOOR_H - SLAB_H) / 2 - 0.04, loc.face * (APT_D / 2 + 0.9)]} scale={[APT_W * 0.5, 0.05, 0.7]}>
+                      <meshBasicMaterial color="#ffd49a" toneMapped={false} />
+                    </mesh>
+                  )}
+                  {viz && s.balcony && !pent && (s.windows === 'glass' || s.windows === 'lit') && (i + f) % 2 === 0 && (
+                    <mesh geometry={box} position={[-APT_W * 0.38, -(FLOOR_H - SLAB_H) / 2 + 0.55, loc.face * (APT_D / 2 + 1.25)]} scale={[0.9, 0.7, 0.5]}>
+                      <meshStandardMaterial color="#4f7d3a" roughness={1} />
+                    </mesh>
+                  )}
+                  {s.pool && viz && (
+                    <group position={[0, (FLOOR_H - SLAB_H) / 2 + 0.05, loc.face * (APT_D / 2 - APT_D * 0.17)]}>
+                      {[-2, -1, 0, 1, 2].map((k) => (
+                        <mesh key={k} geometry={box} position={[k * APT_W * 0.18, 0, 0]} scale={[0.12, 0.18, APT_D * 0.32]}>
+                          <meshStandardMaterial color="#2b2d31" roughness={0.5} />
+                        </mesh>
+                      ))}
+                    </group>
+                  )}
                   {s.balcony && !pent && (
                     <>
                       <mesh geometry={box} position={[-APT_W * 0.08, -(FLOOR_H - SLAB_H) / 2 + 0.1, loc.face * (APT_D / 2 + 0.8)]} scale={[APT_W * 0.7, 0.24, 1.6]} castShadow>
@@ -600,6 +718,16 @@ const BuildingMesh = memo(function BuildingMesh({
                       )}
                     </>
                   )}
+                  {s.pool && viz && (
+                    <group position={[APT_W * 0.12, -(FLOOR_H - SLAB_H) / 2 + 0.2, loc.face * (APT_D / 2 - APT_D * 0.17 + 0.1)]}>
+                      <mesh geometry={box} scale={[APT_W * 0.62, 0.22, APT_D * 0.26]} receiveShadow>
+                        <meshStandardMaterial color="#b08a5e" roughness={0.8} />
+                      </mesh>
+                      <mesh geometry={box} position={[0, 0.13, 0]} scale={[APT_W * 0.44, 0.06, APT_D * 0.17]}>
+                        <meshStandardMaterial color={tod === 'day' ? '#4fc3e6' : '#3fb6dc'} emissive={tod === 'day' ? '#000' : '#0e6b8c'} emissiveIntensity={tod === 'night' ? 1.4 : 0.8} metalness={0.2} roughness={0.05} />
+                      </mesh>
+                    </group>
+                  )}
                   {pent && s.windows !== 'none' && s.windows !== 'opening' && (
                     <mesh geometry={box} position={[0, -(FLOOR_H - SLAB_H) / 2 + 0.55, loc.face * (APT_D / 2 - 0.1)]} scale={[APT_W - 0.2, 1.05, 0.05]}>
                       <meshStandardMaterial color={C.glass} transparent opacity={0.45} metalness={0.3} roughness={0.1} />
@@ -611,28 +739,38 @@ const BuildingMesh = memo(function BuildingMesh({
           </group>
         )
       })}
-      {viz && shellDone && b.floors >= 3 && (() => {
+      {viz && b.floors >= 3 && (() => {
+        // המסגרת השחורה (HPL) נבנית קומה אחרי קומה, לפי סימון ״חיפוי HPL״
         const twoRows = Math.max(...p.perFloor) > 2
         const faceZ = twoRows ? APT_D + 1.2 : APT_D / 2
-        const top = (b.floors >= 4 ? b.floors - 1 : b.floors) * FLOOR_H
+        const topF = b.floors >= 4 ? b.floors - 1 : b.floors
         const x1 = -w / 2 + 0.3
         const x2 = w / 2 - CORE_W - 0.1
         const zw = x2 - x1
-        const hh = top - FLOOR_H
+        const fl = Array.from({ length: Math.max(0, topF - 1) }, (_, i) => i + 1).filter((f) => f <= maxF && floors[f]?.hpl)
+        if (!fl.length) return null
         return [1, -1].map((side) => (
           <group key={side} position={[0, 0, side * (faceZ + 0.85)]}>
-            <mesh geometry={box} position={[x1, FLOOR_H + hh / 2, 0]} scale={[0.6, hh, 1.75]} castShadow>
-              <meshStandardMaterial color={C.frame} roughness={0.6} />
-            </mesh>
-            <mesh geometry={box} position={[x2, FLOOR_H + hh / 2, 0]} scale={[0.6, hh, 1.75]} castShadow>
-              <meshStandardMaterial color={C.frame} roughness={0.6} />
-            </mesh>
-            <mesh geometry={box} position={[(x1 + x2) / 2, top - 0.2, 0]} scale={[zw + 0.6, 0.5, 1.75]} castShadow>
-              <meshStandardMaterial color={C.frame} roughness={0.6} />
-            </mesh>
-            <mesh geometry={box} position={[(x1 + x2) / 2, FLOOR_H + 0.05, 0]} scale={[zw + 0.6, 0.35, 1.75]}>
-              <meshStandardMaterial color={C.frame} roughness={0.6} />
-            </mesh>
+            {fl.map((f) => (
+              <group key={f}>
+                <mesh geometry={box} position={[x1, f * FLOOR_H + FLOOR_H / 2, 0]} scale={[0.6, FLOOR_H, 1.75]} castShadow>
+                  <meshStandardMaterial color={C.frame} roughness={0.35} metalness={0.1} />
+                </mesh>
+                <mesh geometry={box} position={[x2, f * FLOOR_H + FLOOR_H / 2, 0]} scale={[0.6, FLOOR_H, 1.75]} castShadow>
+                  <meshStandardMaterial color={C.frame} roughness={0.35} metalness={0.1} />
+                </mesh>
+              </group>
+            ))}
+            {floors[1]?.hpl && (
+              <mesh geometry={box} position={[(x1 + x2) / 2, FLOOR_H + 0.05, 0]} scale={[zw + 0.6, 0.35, 1.75]}>
+                <meshStandardMaterial color={C.frame} roughness={0.35} />
+              </mesh>
+            )}
+            {floors[topF - 1]?.hpl && maxF >= topF - 1 && (
+              <mesh geometry={box} position={[(x1 + x2) / 2, topF * FLOOR_H - 0.2, 0]} scale={[zw + 0.6, 0.5, 1.75]} castShadow>
+                <meshStandardMaterial color={C.frame} roughness={0.35} />
+              </mesh>
+            )}
           </group>
         ))
       })()}
@@ -745,7 +883,8 @@ function IfcBuilding({
 }
 
 export function Site3D() {
-  const { model, done, date, sel, setSel, openApt, data, models, saveModel, upload, canWrite, toast, ask } = useStore()
+  const { model, done, date, sel, setSel, openApt, data, models, saveModel, upload, canWrite, toast, ask, setDone } = useStore()
+  const [markTrade, setMarkTrade] = useState<string | null>(null)
   const [localModels, setLocalModels] = useState<Record<string, { name: string; buf: ArrayBuffer }>>({})
   const [ifcBusy, setIfcBusy] = useState(false)
   const ifcInput = useRef<HTMLInputElement>(null)
@@ -773,7 +912,7 @@ export function Site3D() {
 
   const state = useMemo(() => {
     const ok = (tid: string, unit: string) => isDone(done, taskIdOf(tid, unit), date)
-    const out = new Map<string, { floors: FloorState[]; apts: AptState[]; aptIds: string[][] }>()
+    const out = new Map<string, { floors: FloorState[]; apts: AptState[]; aptIds: string[][]; site: SiteState }>()
     for (const p of placed) {
       const b = p.b
       const floors: FloorState[] = []
@@ -783,7 +922,17 @@ export function Site3D() {
       for (let f = 0; f < b.floors; f++) {
         const fu = floorUnit(b.id, f)
         const walls = has('walls') ? ok('walls', fu) : true
-        const fs: FloorState = { slab: has('slab') ? ok('slab', fu) : walls, walls, tradeDone: tr?.level === 'floor' ? ok(tr.id, fu) : false, pct: 0, fin: 0, tradeFrac: 0 }
+        const marble = has('marble') ? ok('marble', fu) : walls && (has('blocks') ? ok('blocks', fu) : true)
+        const fs: FloorState = {
+          slab: has('slab') ? ok('slab', fu) : walls,
+          walls,
+          marble,
+          hpl: has('hpl') ? ok('hpl', fu) : marble,
+          tradeDone: tr?.level === 'floor' ? ok(tr.id, fu) : false,
+          pct: 0,
+          fin: 0,
+          tradeFrac: 0,
+        }
         floors.push(fs)
         const blocks = has('blocks') ? ok('blocks', fu) : walls
         const onFloor = bApts.filter((a) => a.floor === f)
@@ -791,7 +940,7 @@ export function Site3D() {
         const nOn = onFloor.length
         const pentFloor = b.floors >= 4 && f === b.floors - 1
         for (const a of onFloor) {
-          const s: AptState = { show: true, color: C.ghost, opacity: 1, windows: 'none', balcony: false, pent: false, textured: false }
+          const s: AptState = { show: true, color: C.ghost, opacity: 1, windows: 'none', balcony: false, pent: false, textured: false, pool: false }
           if (mode === 'viz') {
             if (!fs.walls) s.show = false
             else {
@@ -801,11 +950,14 @@ export function Site3D() {
               const front = aptLocal(p, a.idx, nOn).face > 0
               const facade = pentFloor ? C.pentStone : front && f >= 1 ? C.grayStone : C.white
               s.pent = pentFloor
-              s.textured = fin > 0.3 && facade === C.white
-              s.color = delivered ? (facade === C.white ? C.delivered : facade) : fin > 0 ? lerpColor(C.blocks, facade, Math.min(1, fin * 1.6)) : blocks ? C.blocks : C.concrete
+              // המעטפת החיצונית נקבעת לפי החיפוי: שיש לבן/אפור אחרי ״חיפוי חוץ — שיש״, לפני כן בלוקים או בטון
+              s.textured = fs.marble && facade === C.white
+              s.color = fs.marble ? (delivered && facade === C.white ? C.delivered : facade) : blocks ? lerpColor(C.blocks, C.concrete, fin > 0 ? 0 : 0.15) : C.concrete
               const alu = has('alu') ? ok('alu', a.id) : fin > 0.6
               s.windows = alu ? (delivered && tod !== 'day' ? 'lit' : 'glass') : blocks ? 'opening' : 'none'
               s.balcony = blocks
+              // בריכה במרפסת הגג של הפנטהאוז
+              s.pool = pentFloor && alu && fs.marble
             }
           } else if (mode === 'status') {
             const c = countDone(done, tasksForApt(model, a.id), date)
@@ -826,11 +978,27 @@ export function Site3D() {
         const ft = (model.tasksByBuilding.get(b.id) ?? []).filter((t) => t.floor === f)
         fs.pct = ft.length ? (ft.filter((t) => isDone(done, t.id, date)).length / ft.length) * 100 : 0
       }
-      out.set(b.id, { floors, apts, aptIds })
+      const bu = buildingUnit(b.id)
+      const site: SiteState = {
+        excav: has('excav') ? ok('excav', bu) : true,
+        parking: has('parking') ? ok('parking', bu) : true,
+        dev: has('dev') ? ok('dev', bu) : floors.every((x) => x.marble),
+      }
+      out.set(b.id, { floors, apts, aptIds, site })
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, done, date, placed, mode, tr, aptTradeIds, tod])
+
+  /** מגרש מפותח = כל הבניינים בו סיימו ״פיתוח שטח״ (עד אז — אדמה של אתר בנייה) */
+  const lotDev = useMemo(() => {
+    const m = new Map<string, boolean>()
+    for (const pl of plates) {
+      const bs = placed.filter((x) => x.b.lotId === pl.id)
+      m.set(pl.id, bs.length > 0 && bs.every((x) => state.get(x.b.id)?.site.dev))
+    }
+    return m
+  }, [plates, placed, state])
 
   const goal = useMemo(() => {
     const p = placed.find((x) => x.b.id === sel.buildingId)
@@ -859,6 +1027,14 @@ export function Site3D() {
   const pick = (aptId: string) => {
     const a = model.aptById.get(aptId)!
     const b = model.buildingById.get(a.buildingId)!
+    const mt = markTrade ? model.tradeById.get(markTrade) : undefined
+    if (mt) {
+      // מצב סימון: לחיצה מסמנת (או מבטלת) את המלאכה ליחידה — והבניין נבנה מול העיניים
+      const unit = mt.level === 'building' ? buildingUnit(b.id) : mt.level === 'floor' ? floorUnit(b.id, a.floor) : a.id
+      const tid = taskIdOf(mt.id, unit)
+      setDone([tid], isDone(done, tid, date) ? null : Math.min(date, TODAY))
+      return
+    }
     setSel({ lotId: sel.lotId ? b.lotId : null, buildingId: b.id, aptId })
     openApt(aptId)
   }
@@ -889,6 +1065,22 @@ export function Site3D() {
               </option>
             ))}
           </select>
+        )}
+        {canWrite && (
+          <div className={`mark-tool${markTrade ? ' on' : ''}`}>
+            <button className={`btn${markTrade ? ' primary' : ''}`} onClick={() => setMarkTrade(markTrade ? null : model.tradeById.has('slab') ? 'slab' : model.trades[0]?.id ?? null)} title="לחיצה על קומה או דירה בתלת מימד מסמנת את המלאכה כבוצעה">
+              <Icon name="check" size={15} /> {markTrade ? 'סיום סימון' : 'סמן ביצוע בתלת מימד'}
+            </button>
+            {markTrade && (
+              <select value={markTrade} onChange={(e) => setMarkTrade(e.target.value)} aria-label="מלאכה לסימון">
+                {model.trades.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.level === 'building' ? 'בניין' : t.level === 'floor' ? 'קומה' : 'דירה'})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
         <div className="seg" role="group" aria-label="שעה ביום">
           {(
@@ -986,13 +1178,16 @@ export function Site3D() {
           shadows
           dpr={[1, 1.75]}
           gl={{ antialias: true }}
-          camera={{ fov: 38, near: 1, far: 20000, position: [size * 0.2, size * 0.4, size * 0.55] }}
+          camera={{ fov: 38, near: 1, far: 40000, position: [size * 0.2, size * 0.4, size * 0.55] }}
           onPointerMissed={() => setSel({ aptId: null })}
         >
           <Atmosphere tod={tod} size={size} mode={mode} />
           <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI / 2.08} minDistance={15} maxDistance={size * 2.2} />
           <CameraRig goal={goal} compassRef={compassRef} />
           <Landscape plates={plates} placed={placed} size={size} tod={tod} mode={mode} />
+          {mode === 'viz' && <AkkoBackdrop size={size} tod={tod} />}
+          {mode === 'viz' && <SoftEnvironment tod={tod} />}
+          {mode === 'viz' && <PostFX tod={tod} low={!wide} />}
 
           {plates
             .filter((pl) => !sel.lotId || pl.id === sel.lotId)
@@ -1010,7 +1205,24 @@ export function Site3D() {
                       setSel({ lotId: pl.id, buildingId: null, aptId: null })
                     }}
                   >
-                    <meshStandardMaterial color={mode === 'viz' ? (tod === 'night' ? '#4a4740' : C.paving) : sel.lotId === pl.id ? '#cfe0bd' : tod === 'night' ? '#26303a' : '#e6ebe1'} roughness={0.95} />
+                    <meshStandardMaterial
+                      color={
+                        mode === 'viz'
+                          ? lotDev.get(pl.id)
+                            ? tod === 'night'
+                              ? '#4a4740'
+                              : C.paving
+                            : tod === 'night'
+                              ? '#3b3226'
+                              : '#a38d6d'
+                          : sel.lotId === pl.id
+                            ? '#cfe0bd'
+                            : tod === 'night'
+                              ? '#26303a'
+                              : '#e6ebe1'
+                      }
+                      roughness={0.95}
+                    />
                   </mesh>
                 ))}
                 {labels && (
@@ -1058,6 +1270,8 @@ export function Site3D() {
                 tod={tod}
                 onPick={pick}
                 onHover={setHover}
+                site={st.site}
+                marking={!!markTrade}
               />
             )
           })}
@@ -1070,7 +1284,14 @@ export function Site3D() {
               const loc = aptLocal(p, hoverApt.idx, n)
               return (
                 <Html position={[p.x + loc.x, p.y + hoverApt.floor * FLOOR_H + FLOOR_H + 1.2, p.z + loc.z]} center className="lbl3d tip" zIndexRange={[30, 0]}>
-                  בניין {p.b.name} · דירה {hoverApt.number} · {floorLabel(hoverApt.floor)}
+                  {(() => {
+                    const mt = markTrade ? model.tradeById.get(markTrade) : undefined
+                    if (!mt) return `בניין ${p.b.name} · דירה ${hoverApt.number} · ${floorLabel(hoverApt.floor)}`
+                    const unit = mt.level === 'building' ? buildingUnit(p.b.id) : mt.level === 'floor' ? floorUnit(p.b.id, hoverApt.floor) : hoverApt.id
+                    const isOn = isDone(done, taskIdOf(mt.id, unit), date)
+                    const where = mt.level === 'building' ? `בניין ${p.b.name}` : mt.level === 'floor' ? `${floorLabel(hoverApt.floor)} · בניין ${p.b.name}` : `דירה ${hoverApt.number} · בניין ${p.b.name}`
+                    return `${isOn ? 'בטל' : 'סמן'} ${mt.name} — ${where}`
+                  })()}
                 </Html>
               )
             })()}

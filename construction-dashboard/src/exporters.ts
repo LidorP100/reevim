@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { useStore } from './store'
-import { aptDone, countDone, floorLabel, floorUnit, isDone, taskIdOf, tasksForApt } from './engine'
+import { aptDone, buildingUnit, countDone, floorLabel, floorUnit, isDone, taskIdOf, tasksForApt } from './engine'
 import { fmt, fromDay } from './date'
 import { loadScript, saveFile } from './files'
 import type { SummaryRow } from './views/Budget'
@@ -47,6 +47,7 @@ export function exportMatrix(s: Store, buildingIds: string[]) {
     const b = s.model.buildingById.get(bid)!
     const apts = s.model.aptsByBuilding.get(bid) ?? []
     const rows: Cell[][] = [['קומה', 'דירה', ...s.model.trades.map((t) => t.name), '% ביצוע']]
+    rows.push(['כל הבניין', '', ...s.model.trades.map((t) => (t.level === 'building' ? d(s, taskIdOf(t.id, buildingUnit(bid))) : '')), ''])
     for (let f = b.floors - 1; f >= 0; f--) {
       rows.push([floorLabel(f), '', ...s.model.trades.map((t) => (t.level === 'floor' ? d(s, taskIdOf(t.id, floorUnit(bid, f))) : '')), ''])
       for (const a of apts.filter((x) => x.floor === f)) {

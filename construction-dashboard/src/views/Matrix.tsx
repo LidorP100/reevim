@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { countDone, floorLabel, floorUnit, isDone, isLate, readyTasks, taskIdOf } from '../engine'
+import { buildingUnit, countDone, floorLabel, floorUnit, isDone, isLate, readyTasks, taskIdOf } from '../engine'
 import { ScopePicker } from '../components/ScopePicker'
 import { Icon } from '../components/ui'
 import { exportMatrix } from '../exporters'
@@ -67,6 +67,7 @@ export function Matrix() {
 
   const cellKeyIds = (tId: string, f: number, aptId: string | null): [string, string[]] => {
     const t = model.tradeById.get(tId)!
+    if (t.level === 'building') return [`${tId}|B`, [taskIdOf(tId, buildingUnit(b.id))]]
     if (t.level === 'floor') return [`${tId}|F${f}`, [taskIdOf(tId, floorUnit(b.id, f))]]
     if (aptId) return [`${tId}|${aptId}`, [taskIdOf(tId, aptId)]]
     return [`${tId}|F${f}`, apts.filter((a) => a.floor === f).map((a) => taskIdOf(tId, a.id))]
@@ -205,21 +206,27 @@ export function Matrix() {
             </tr>
           </thead>
           <tbody>
+            {trades.some((t) => t.level === 'building') && (
+              <tr className="floor-row building-row">
+                <th className="sticky-col">כל הבניין</th>
+                {trades.map((t) => (t.level === 'building' ? cell(t.id, -1, null) : <td key={t.id} className="cell na" />))}
+              </tr>
+            )}
             {floors.map((f) => {
               const fa = apts.filter((a) => a.floor === f && (!onlyOpen || !aptComplete(a.id)))
               return [
                 <tr key={`f${f}`} className="floor-row">
-                  <th className="sticky-col" title="בחר את כל הקומה" onClick={() => canWrite && pickMany(trades.map((t) => cellKeyIds(t.id, f, null)))}>
+                  <th className="sticky-col" title="בחר את כל הקומה" onClick={() => canWrite && pickMany(trades.filter((t) => t.level !== 'building').map((t) => cellKeyIds(t.id, f, null)))}>
                     {floorLabel(f)}
                   </th>
-                  {trades.map((t) => cell(t.id, f, null))}
+                  {trades.map((t) => (t.level === 'building' ? <td key={t.id} className="cell na" /> : cell(t.id, f, null)))}
                 </tr>,
                 ...fa.map((a) => (
                   <tr key={a.id} className={sel.aptId === a.id ? 'apt-row selected' : 'apt-row'}>
                     <th className="sticky-col apt-name" onClick={() => openApt(a.id)}>
                       דירה {a.number}
                     </th>
-                    {trades.map((t) => (t.level === 'floor' ? <td key={t.id} className="cell na" /> : cell(t.id, f, a.id)))}
+                    {trades.map((t) => (t.level !== 'apt' ? <td key={t.id} className="cell na" /> : cell(t.id, f, a.id)))}
                   </tr>
                 )),
               ]

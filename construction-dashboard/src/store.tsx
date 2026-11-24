@@ -34,6 +34,7 @@ interface Store {
   saveAptInfo: (aptId: string, info: AptInfo) => void
   saveDefect: (d: Defect, remove?: boolean) => void
   resetAll: () => void
+  resetTrades: () => void
   ask: (msg: string, onYes: () => void) => void
   pending: { msg: string; onYes: () => void } | null
   closeAsk: () => void
@@ -304,6 +305,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveBudget = useCallback((l: BudgetLine, remove?: boolean) => guard() && backend!.saveDoc('budget', l.id, remove ? null : l), [guard, backend])
   const saveModel = useCallback((m: BuildingModel, remove?: boolean) => guard() && backend!.saveDoc('models', m.id, remove ? null : m), [guard, backend])
   const resetAll = useCallback(() => backend?.reset(), [backend])
+  /** איפוס כל המלאכות: מכבה את נתוני הדוגמה ומוחק את כל סימוני הביצוע */
+  const resetTrades = useCallback(() => {
+    if (!guard()) return
+    backend!.saveProject({ ...(remote.project ?? defaultData()), sampleOn: false })
+    backend!.clearMarks([...new Set([...(remote.project ?? defaultData()).buildings.map((b) => b.id), ...Object.keys(remote.marks)])])
+    toast({ kind: 'ok', text: 'כל המלאכות אופסו — אפשר להתחיל לסמן ביצוע' })
+  }, [guard, backend, remote.project, remote.marks, toast])
   const createProject = useCallback(() => backend?.saveProject(defaultData()), [backend])
   const ask = useCallback((msg: string, onYes: () => void) => setPending({ msg, onYes }), [])
   const closeAsk = useCallback(() => setPending(null), [])
@@ -326,6 +334,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveAptInfo,
     saveDefect,
     resetAll,
+    resetTrades,
     ask,
     pending,
     closeAsk,

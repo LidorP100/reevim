@@ -10,11 +10,12 @@ export function aptsPerFloor(b: Building): number[] {
   if (extra > 0) out[0] += extra
   return out
 }
-export const floorLabel = (f: number) => (f === 0 ? 'קרקע' : `קומה ${f}`)
+export const floorLabel = (f: number) => (f < 0 ? 'כל הבניין' : f === 0 ? 'קרקע' : `קומה ${f}`)
 
 export const CYCLE = 14 // ימים בין קומה לקומה בשלד
 
 export const floorUnit = (buildingId: string, floor: number) => `${buildingId}:F${floor}`
+export const buildingUnit = (buildingId: string) => `${buildingId}:B`
 export const aptIdOf = (buildingId: string, n: number) => `${buildingId}:A${n}`
 export const taskIdOf = (tradeId: string, unit: string) => `${tradeId}|${unit}`
 
@@ -78,26 +79,50 @@ export function buildModel(lots: Lot[], buildings: Building[], tradesIn: Trade[]
 
     const start = new Map<string, number>()
     const bTasks: Task[] = []
+    const bu = buildingUnit(b.id)
+    const st = (tid: string, unit: string) => start.get(taskIdOf(tid, unit))
+    const maxOf = (xs: (number | undefined)[]) => {
+      const v = xs.filter((x): x is number => x !== undefined)
+      return v.length ? Math.max(...v) : undefined
+    }
     for (const t of trades) {
       const p = t.after ? tradeById.get(t.after) : undefined
+      /** תחילת המלאכה הקודמת בהקשר של יחידה (בניין / קומה / דירה) */
+      const pred = (floor?: number, apt?: Apt): number | undefined => {
+        if (!p) return undefined
+        if (p.level === 'building') return st(p.id, bu)
+        if (p.level === 'floor') {
+          if (floor !== undefined) return st(p.id, floorUnit(b.id, floor))
+          return maxOf(Array.from({ length: b.floors }, (_, f) => st(p.id, floorUnit(b.id, f))))
+        }
+        if (apt) return st(p.id, apt.id)
+        if (floor !== undefined) return maxOf(aptsOnFloor(floor).map((x) => st(p.id, x.id)))
+        return maxOf(bApts.map((x) => st(p.id, x.id)))
+      }
+      if (t.level === 'building') {
+        const s = (pred() ?? b.start) + t.lag
+        const id = taskIdOf(t.id, bu)
+        start.set(id, s)
+        bTasks.push({ id, tradeId: t.id, buildingId: b.id, floor: -1, aptId: null, ps: s, pe: s + t.duration })
+        continue
+      }
+      const fromBuilding = p?.level === 'building'
       for (let f = 0; f < b.floors; f++) {
         const base = b.start + f * CYCLE
-        const predStart = (unit: string) => (p ? start.get(taskIdOf(p.id, unit)) : undefined)
         if (t.level === 'floor') {
-          const fu = floorUnit(b.id, f)
-          let s: number | undefined
-          if (!p) s = base + t.lag
-          else if (p.level === 'floor') s = (predStart(fu) ?? base) + t.lag
-          else s = Math.max(...aptsOnFloor(f).map((a) => predStart(a.id) ?? base)) + t.lag
-          const id = taskIdOf(t.id, fu)
+          const pp = pred(f)
+          const s = pp === undefined ? base + t.lag : pp + t.lag + (fromBuilding ? f * CYCLE : 0)
+          const id = taskIdOf(t.id, floorUnit(b.id, f))
           start.set(id, s)
           bTasks.push({ id, tradeId: t.id, buildingId: b.id, floor: f, aptId: null, ps: s, pe: s + t.duration })
         } else {
           for (const a of aptsOnFloor(f)) {
+            const pp = pred(f, a)
             let s: number
-            if (!p) s = base + t.lag + a.idx * 2
-            else if (p.level === 'floor') s = (predStart(floorUnit(b.id, f)) ?? base) + t.lag + a.idx * 2
-            else s = (predStart(a.id) ?? base) + t.lag
+            if (pp === undefined) s = base + t.lag + a.idx * 2
+            else if (fromBuilding) s = pp + t.lag + f * CYCLE + a.idx * 2
+            else if (p!.level === 'floor') s = pp + t.lag + a.idx * 2
+            else s = pp + t.lag
             const id = taskIdOf(t.id, a.id)
             start.set(id, s)
             const task = { id, tradeId: t.id, buildingId: b.id, floor: f, aptId: a.id, ps: s, pe: s + t.duration }
@@ -161,14 +186,13 @@ function rng(seed: string) {
 export function buildDone(model: Model, sampleOn: boolean, marks: Marks, today: number): DoneIndex {
   const idx: DoneIndex = new Map()
   if (sampleOn) {
-    // נתוני דוגמה: קצב שונה לכל בניין, קבוע (לא משתנה בין טעינות)
-    const pace = new Map(model.buildings.map((b) => [b.id, 0.03 + rng(b.id)() * 0.35]))
+    // נתוני דוגמה: כל הפרויקט שלם — לוח הזמנים המתוכנן מוזז אחורה כך שהמשימה האחרונה הסתיימה לפני שבוע.
+    // כך ציר הזמן מראה את כל הבנייה, ומצב "היום" הוא פרויקט גמור — עד שמאפסים את המלאכות.
+    const offset = today - 7 - model.maxDay
     for (const t of model.tasks) {
       if (!model.tradeById.get(t.tradeId)?.sample) continue
-      const b = model.buildingById.get(t.buildingId)!
       const r = rng(t.id)
-      const day = b.start + Math.round((t.pe - b.start) * (1 + pace.get(b.id)!) + r() * 6)
-      if (day <= today) idx.set(t.id, day)
+      idx.set(t.id, Math.min(today - 1, t.pe + offset + Math.round(r() * 3)))
     }
   }
   for (const [id, m] of Object.entries(marks)) {
@@ -238,6 +262,12 @@ export function predIds(model: Model, t: Task): string[] {
     // מלאכה ראשונה: קומה מוכנה כשהקומה שמתחתיה עברה את אותה מלאכה
     if (tr?.level === 'floor' && t.floor > 0) return [taskIdOf(tr.id, floorUnit(t.buildingId, t.floor - 1))]
     return []
+  }
+  if (p.level === 'building') return [taskIdOf(p.id, buildingUnit(t.buildingId))]
+  if (tr?.level === 'building') {
+    const b = model.buildingById.get(t.buildingId)
+    if (p.level === 'floor') return Array.from({ length: b?.floors ?? 0 }, (_, f) => taskIdOf(p.id, floorUnit(t.buildingId, f)))
+    return (model.aptsByBuilding.get(t.buildingId) ?? []).map((a) => taskIdOf(p.id, a.id))
   }
   if (p.level === 'floor') return [taskIdOf(p.id, floorUnit(t.buildingId, t.floor))]
   if (t.aptId) return [taskIdOf(p.id, t.aptId)]

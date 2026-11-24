@@ -2338,3 +2338,30 @@ input.plain.bold {
     grid-column: 1 / -1;
   }
 }
+
+.demo-banner {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+  background: linear-gradient(90deg, var(--amber-soft), transparent 70%), var(--surface);
+}
+.demo-banner > div {
+  flex: 1;
+  min-width: 240px;
+}
+.demo-banner svg {
+  color: var(--warn);
+  flex: none;
+}
+
+.mark-tool {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.mark-tool.on select {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}

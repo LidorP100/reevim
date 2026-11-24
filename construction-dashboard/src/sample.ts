@@ -3,9 +3,17 @@ import { toDay } from './date'
 
 // מלאכות ברירת מחדל: שלד ברמת קומה, ואחריו גמרים ברמת דירה
 export const defaultTrades: Trade[] = [
-  { id: 'slab', name: 'יציקת רצפה', level: 'floor', color: '#8d939b', duration: 3, after: null, lag: 0, weight: 3 },
+  // שלב א׳ — לכל בניין: חפירה וחניון תת־קרקעי
+  { id: 'excav', name: 'חפירה ודיפון', level: 'building', color: '#8b6b4a', duration: 45, after: null, lag: 0, weight: 3 },
+  { id: 'parking', name: 'שלד חניון', level: 'building', color: '#7a7f86', duration: 60, after: 'excav', lag: 45, weight: 3 },
+  // שלד — לכל קומה
+  { id: 'slab', name: 'יציקת רצפה', level: 'floor', color: '#8d939b', duration: 3, after: 'parking', lag: 60, weight: 3 },
   { id: 'walls', name: 'קירות ועמודים', level: 'floor', color: '#6b7380', duration: 6, after: 'slab', lag: 3, weight: 3 },
   { id: 'blocks', name: 'בנייה (בלוקים)', level: 'floor', color: '#b07a52', duration: 8, after: 'walls', lag: 16, weight: 2 },
+  // מעטפת — לכל קומה (לפי החזיתות: שיש אפור ולבן, מסגרת שחורה HPL)
+  { id: 'marble', name: 'חיפוי חוץ — שיש', level: 'floor', color: '#bfb8ad', duration: 10, after: 'blocks', lag: 30, weight: 2 },
+  { id: 'hpl', name: 'חיפוי HPL', level: 'floor', color: '#2a2c30', duration: 6, after: 'marble', lag: 8, weight: 1 },
+  // גמרים — לכל דירה
   { id: 'plumb', name: 'אינסטלציה גס', level: 'apt', color: '#2f7fc1', duration: 6, after: 'blocks', lag: 8, weight: 1.5 },
   { id: 'elec', name: 'חשמל גס', level: 'apt', color: '#e0a526', duration: 6, after: 'plumb', lag: 2, weight: 1.5 },
   { id: 'ac', name: 'הכנה למיזוג', level: 'apt', color: '#4bb3c4', duration: 4, after: 'elec', lag: 3, weight: 1 },
@@ -20,6 +28,8 @@ export const defaultTrades: Trade[] = [
   { id: 'sanitary', name: 'כלים סניטריים', level: 'apt', color: '#3c8a7e', duration: 3, after: 'kitchen', lag: 2, weight: 0.7 },
   { id: 'elecfin', name: 'חשמל גמר', level: 'apt', color: '#c9a20e', duration: 4, after: 'sanitary', lag: 2, weight: 0.7 },
   { id: 'handover', name: 'מסירה', level: 'apt', color: '#2e8b57', duration: 2, after: 'elecfin', lag: 10, weight: 0.5 },
+  // סיום — לכל בניין: פיתוח המגרש סביבו (גינות, שבילים, חניות, בריכות)
+  { id: 'dev', name: 'פיתוח שטח', level: 'building', color: '#5f9e4c', duration: 60, after: 'paint', lag: 20, weight: 2 },
 ].map((t) => ({ ...t, level: t.level as Trade['level'], sample: true }))
 
 // פריסת בניינים — פרויקט עכו 590 (מתוך קובץ האקסל)
@@ -38,7 +48,8 @@ export const AKKO_590: [string, number, string, number, number][] = [
 export function defaultStructure(): { lots: Lot[]; buildings: Building[] } {
   const lots: Lot[] = []
   const buildings: Building[] = []
-  const projectStart = toDay('2025-05-01')
+  // לוח זמנים התחלתי: חפירת החניונים מתחילה באפריל 2027, מגרש אחרי מגרש
+  const projectStart = toDay('2027-04-01')
   const perLotIndex = new Map<string, number>()
   for (const [lotName, num, type, apts, floors] of AKKO_590) {
     let lot = lots.find((l) => l.name === `מגרש ${lotName}`)
@@ -53,7 +64,7 @@ export function defaultStructure(): { lots: Lot[]; buildings: Building[] } {
       type,
       floors,
       apts,
-      start: projectStart + li * 105 + j * 20,
+      start: projectStart + li * 45 + j * 14,
     })
   }
   return { lots, buildings }
@@ -67,6 +78,7 @@ export function defaultData(): ProjectData {
     buildings,
     trades: defaultTrades,
     sampleOn: true,
+    planOn: true,
   }
 }
 

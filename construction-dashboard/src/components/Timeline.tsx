@@ -8,9 +8,13 @@ export function useRange() {
   const { model, done } = useStore()
   return useMemo(() => {
     let maxDone = 0
-    for (const d of done.values()) if (d > maxDone) maxDone = d
-    const start = model.minDay - 7
-    const end = Math.max(model.maxDay + 150, maxDone, TODAY + 30)
+    let minDone = Infinity
+    for (const d of done.values()) {
+      if (d > maxDone) maxDone = d
+      if (d < minDone) minDone = d
+    }
+    const start = Math.min(model.minDay, minDone) - 7
+    const end = Math.max(model.maxDay + 30, maxDone, TODAY + 30)
     return { start, end }
   }, [model, done])
 }

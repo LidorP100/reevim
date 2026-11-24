@@ -62,6 +62,7 @@ export function Trades() {
             <select id="trade-level" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value as Level })}>
               <option value="apt">לכל דירה</option>
               <option value="floor">לכל קומה</option>
+              <option value="building">לכל בניין</option>
             </select>
             <label className="inline muted small">
               מגיעה אחרי
@@ -119,6 +120,7 @@ export function Trades() {
                       <select value={t.level} onChange={(e) => patch(t.id, { level: e.target.value as Level })} disabled={!canWrite} aria-label="רמה">
                         <option value="apt">דירה</option>
                         <option value="floor">קומה</option>
+                        <option value="building">בניין</option>
                       </select>
                     </td>
                     <td>

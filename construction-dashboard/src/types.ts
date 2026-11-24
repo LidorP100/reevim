@@ -1,4 +1,4 @@
-export type Level = 'floor' | 'apt'
+export type Level = 'building' | 'floor' | 'apt'
 
 export interface Lot {
   id: string

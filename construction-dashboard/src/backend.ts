@@ -45,6 +45,7 @@ export interface Backend {
   names(ids: string[]): Promise<Record<string, string>>
   reset(): void
   saveDrawing(d: Drawing, remove?: boolean): void
+  clearMarks(buildingIds: string[]): void
   saveContractor(c: Contractor, remove?: boolean): void
   /** העלאת קובץ (רק לעורכים במצב משותף) */
   upload: ((file: Blob, type?: string) => Promise<Uploaded | null>) | null
@@ -99,6 +100,7 @@ function localBackend(): Backend {
     saveDrawing: (d, remove) =>
       commit({ ...state, drawings: remove ? state.drawings.filter((x) => x.id !== d.id) : [...state.drawings.filter((x) => x.id !== d.id), d] }),
     upload: null,
+    clearMarks: () => commit({ ...state, marks: {} }),
     saveItem: (col, b, id, v) => commit({ ...state, [col]: { ...state[col], [b]: { ...state[col][b], [id]: v } } }),
     saveDoc: (col, id, v) =>
       commit({ ...state, [col]: v ? [...(state[col] as { id: string }[]).filter((x) => x.id !== id), v] : (state[col] as { id: string }[]).filter((x) => x.id !== id) }),
@@ -307,6 +309,11 @@ function sharedBackend(db: AnyDb, user: AnyUser | null, userId: string | null, c
       emit()
       if (remove) void db.doc(`contractors/${c.id}`).delete().catch(() => window.dispatchEvent(new CustomEvent('cd-write-error', { detail: 'error' })))
       else queue(`contractors/${c.id}`, JSON.parse(JSON.stringify(c)), true)
+    },
+    clearMarks(ids) {
+      state = { ...state, marks: {} }
+      emit()
+      for (const b of ids) queue(`marks/${b}`, { m: {} }, true)
     },
     saveItem(col, b, id, v) {
       state = { ...state, [col]: { ...state[col], [b]: { ...state[col][b], [id]: v } } }

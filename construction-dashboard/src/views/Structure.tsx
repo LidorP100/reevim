@@ -33,7 +33,7 @@ function parseTable(text: string) {
 }
 
 export function Structure() {
-  const { data, update, model, resetAll, ask, canWrite, toast, shared } = useStore()
+  const { data, update, model, resetAll, ask, canWrite, toast, shared, resetTrades } = useStore()
   const [csv, setCsv] = useState('')
   const [backup, setBackup] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -279,9 +279,9 @@ export function Structure() {
             <h3>נתונים</h3>
             <label className="check">
               <input type="checkbox" checked={data.sampleOn} onChange={(e) => update((d) => ({ ...d, sampleOn: e.target.checked }))} disabled={!canWrite} />
-              הצג נתוני ביצוע לדוגמה
+              הצג פרויקט שלם להדמיה
             </label>
-            <p className="muted small">נתוני הדוגמה מדמים ביצוע כדי לראות את המערכת עובדת. מכבים כשמתחילים לסמן ביצוע אמיתי — הסימונים שלך נשמרים בכל מקרה.</p>
+            <p className="muted small">כשמופעל, כל הפרויקט מוצג גמור, וציר הזמן מראה את סדר הבנייה. ״אפס את כל המלאכות״ מכבה את ההדמיה ומוחק את כל סימוני הביצוע — ומשם מסמנים ביצוע אמיתי.</p>
             <p className="muted small">
               {shared ? 'הנתונים נשמרים במסד משותף: כל מי שיש לו גישה לקישור רואה אותם, ומי שיש לו הרשאת עריכה יכול לעדכן.' : 'הנתונים נשמרים בדפדפן הזה בלבד.'}
             </p>
@@ -295,6 +295,11 @@ export function Structure() {
                 </button>
               )}
               <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
+              {canWrite && (
+                <button className="btn danger" onClick={() => ask('לאפס את כל המלאכות? הפרויקט יוצג ריק, וכל סימוני הביצוע יימחקו.', resetTrades)}>
+                  אפס את כל המלאכות
+                </button>
+              )}
               {canWrite && (
                 <button className="btn danger" onClick={() => ask('לאפס את מבנה הפרויקט לפריסת עכו 590?', resetAll)}>
                   איפוס מבנה
