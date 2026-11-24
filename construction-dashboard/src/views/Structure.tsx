@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { Building, Lot, ProjectData } from '../types'
 import { aptsPerFloor, buildingPlan } from '../engine'
+import { elevOf } from '../sample'
 import { fmt, fromDay, toDay, TODAY } from '../date'
 import { Icon } from '../components/ui'
 
@@ -160,6 +161,7 @@ export function Structure() {
                           <th>טיפוס</th>
                           <th>קומות</th>
                           <th>דירות</th>
+                          <th title="מפלס ±0.00 מוחלט">±0.00</th>
                           <th>חלוקה לקומות (קרקע ←)</th>
                           {data.planOn && <th>התחלה מתוכננת</th>}
                           {data.planOn && <th>סיום מתוכנן</th>}
@@ -184,6 +186,9 @@ export function Structure() {
                               </td>
                               <td>
                                 <input type="number" min={1} max={500} value={b.apts} onChange={(e) => patchB(b.id, { apts: Math.max(1, +e.target.value), floorApts: undefined })} disabled={!canWrite} aria-label="דירות" />
+                              </td>
+                              <td>
+                                <input type="number" step={0.05} min={-50} max={500} value={elevOf(b) ?? ''} onChange={(e) => patchB(b.id, { elev: e.target.value === '' ? undefined : +e.target.value })} disabled={!canWrite} aria-label="מפלס ±0.00" style={{ width: 80 }} />
                               </td>
                               <td style={{ minWidth: 190 }}>
                                 <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>

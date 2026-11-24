@@ -14,6 +14,7 @@ export interface Building {
   apts: number // סה"כ דירות
   floorApts?: number[] // פירוט ידני: דירות בכל קומה (אינדקס 0 = קרקע)
   start: number // יום התחלה (לנתוני דוגמה בלבד)
+  elev?: number // מפלס ±0.00 מוחלט (מטר מעל פני הים)
 }
 
 export interface Trade {

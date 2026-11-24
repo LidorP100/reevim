@@ -4,7 +4,7 @@ import { Edges, Html, OrbitControls, Sky, Stars } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { aptsPerFloor, countDone, floorLabel, floorUnit, isDone, lerpColor, pctColor, taskIdOf, tasksForApt, type Model } from '../engine'
-import { PLAN_BUILDINGS, PLAN_CENTER, PLAN_LOTS, PLAN_SCALE } from '../sample'
+import { elevOf, PLAN_BUILDINGS, PLAN_CENTER, PLAN_LOTS, PLAN_SCALE } from '../sample'
 import { loadIfc, type ParsedIfc } from '../ifc'
 import { fmt } from '../date'
 import { ScopePicker } from '../components/ScopePicker'
@@ -29,12 +29,14 @@ interface Placed {
   d: number
   cols: number
   perFloor: number[]
+  y: number // גובה הבסיס (לפי מפלס ±0.00)
 }
 interface LotPlate {
   id: string
   name: string
   rects: { x: number; z: number; w: number; d: number }[]
   label: [number, number]
+  y: number // גובה המשטח של המגרש
 }
 
 const px = (x: number, y: number): [number, number] => [(x - PLAN_CENTER.x) * PLAN_SCALE, (y - PLAN_CENTER.y) * PLAN_SCALE]
@@ -64,7 +66,7 @@ function layout(model: Model) {
       const p = PLAN_BUILDINGS[b.name]
       if (p && planRects) {
         const [x, z] = px(p[0], p[1])
-        placed.push({ b, x, z, w, d, cols, perFloor })
+        placed.push({ b, x, z, w, d, cols, perFloor, y: 0 })
       } else autoBs.push(b)
     }
     if (autoBs.length) {
@@ -77,7 +79,7 @@ function layout(model: Model) {
         const cols = n <= 2 ? n : Math.ceil(n / 2)
         const w = cols * APT_W + CORE_W
         const d = n <= 2 ? APT_D + 1 : APT_D * 2 + 2.4
-        placed.push({ b, x: startX + w / 2, z, w, d, cols, perFloor })
+        placed.push({ b, x: startX + w / 2, z, w, d, cols, perFloor, y: 0 })
         z += d + 14
       }
       if (!planRects) rects = [{ x: startX + 15, z: -60 + (z + 60) / 2 - 14, w: 50, d: z + 60 + 4 }]
@@ -85,8 +87,19 @@ function layout(model: Model) {
     }
     if (rects.length) {
       const r = rects[0]
-      plates.push({ id: lot.id, name: lot.name, rects, label: [r.x, r.z - r.d / 2 - 4] })
+      plates.push({ id: lot.id, name: lot.name, rects, label: [r.x, r.z - r.d / 2 - 4], y: 0 })
     }
+  }
+  // טופוגרפיה: הבסיס של כל בניין לפי מפלס ±0.00, ומשטח כל מגרש בגובה הממוצע של הבניינים שלו
+  const elevs = placed.map((p) => elevOf(p.b)).filter((e): e is number => typeof e === 'number')
+  const base = elevs.length ? Math.min(...elevs) - 0.6 : 0
+  for (const p of placed) {
+    const e = elevOf(p.b)
+    p.y = typeof e === 'number' ? e - base : 0.6
+  }
+  for (const pl of plates) {
+    const ys = placed.filter((p) => p.b.lotId === pl.id).map((p) => p.y)
+    pl.y = ys.length ? Math.min(...ys) - 0.15 : 0.3
   }
   let maxR = 60
   for (const p of placed) maxR = Math.max(maxR, Math.hypot(p.x, p.z) + 20)
@@ -126,6 +139,8 @@ function stone() {
   return (stoneTex = t)
 }
 const plane = new THREE.PlaneGeometry(1, 1)
+const crownGeo = new THREE.IcosahedronGeometry(0.5, 1)
+const bulbGeo = new THREE.SphereGeometry(0.5, 10, 8)
 
 // ---------- פלטות צבע ----------
 const C = {
@@ -322,16 +337,23 @@ const Landscape = memo(function Landscape({ plates, placed, size, tod, mode }: {
   useEffect(() => {
     const m = new THREE.Matrix4()
     const q = new THREE.Quaternion()
+    // עץ שעומד על משטח מגרש מוגבה — מתחיל מגובה המשטח
+    const groundAt = (x: number, z: number) => {
+      for (const pl of plates) for (const r of pl.rects) if (Math.abs(x - r.x) <= r.w / 2 && Math.abs(z - r.z) <= r.d / 2) return pl.y
+      return 0
+    }
     trees.forEach(([x, z, s], i) => {
-      m.compose(new THREE.Vector3(x, 1.4 * s, z), q, new THREE.Vector3(0.35 * s, 2.8 * s, 0.35 * s))
+      const g = groundAt(x, z)
+      m.compose(new THREE.Vector3(x, g + 1.4 * s, z), q, new THREE.Vector3(0.35 * s, 2.8 * s, 0.35 * s))
       trunk.current?.setMatrixAt(i, m)
-      m.compose(new THREE.Vector3(x, 3.6 * s, z), q, new THREE.Vector3(2.4 * s, 2.2 * s, 2.4 * s))
+      m.compose(new THREE.Vector3(x, g + 3.6 * s, z), q, new THREE.Vector3(2.4 * s, 2.2 * s, 2.4 * s))
       crown.current?.setMatrixAt(i, m)
       const c = new THREE.Color().setHSL(0.24 + ((i * 37) % 10) / 120, 0.38, 0.27 + ((i * 13) % 10) / 90)
       crown.current?.setColorAt(i, c)
     })
     if (trunk.current) trunk.current.instanceMatrix.needsUpdate = true
     if (crown.current) {
+      ;(crown.current.material as THREE.Material).needsUpdate = true
       crown.current.instanceMatrix.needsUpdate = true
       if (crown.current.instanceColor) crown.current.instanceColor.needsUpdate = true
     }
@@ -382,13 +404,13 @@ const Landscape = memo(function Landscape({ plates, placed, size, tod, mode }: {
           <instancedMesh ref={trunk} args={[box, undefined, trees.length]} castShadow>
             <meshStandardMaterial color="#5a4632" />
           </instancedMesh>
-          <instancedMesh ref={crown} args={[new THREE.IcosahedronGeometry(0.5, 1), undefined, trees.length]} castShadow>
+          <instancedMesh ref={crown} args={[crownGeo, undefined, trees.length]} castShadow>
             <meshStandardMaterial roughness={0.9} flatShading />
           </instancedMesh>
           <instancedMesh ref={lampPole} args={[box, undefined, lamps.length]}>
             <meshStandardMaterial color="#2b2b2b" />
           </instancedMesh>
-          <instancedMesh ref={lampBulb} args={[new THREE.SphereGeometry(0.5, 10, 8), undefined, lamps.length]}>
+          <instancedMesh ref={lampBulb} args={[bulbGeo, undefined, lamps.length]}>
             <meshStandardMaterial color={lightsOn ? '#ffd9a0' : '#e9e4d8'} emissive={lightsOn ? '#ffb455' : '#000'} emissiveIntensity={lightsOn ? 3 : 0} toneMapped={!lightsOn} />
           </instancedMesh>
         </>
@@ -484,7 +506,7 @@ const BuildingMesh = memo(function BuildingMesh({
   const started = floors.some((f) => f.slab)
   const shellDone = floors.every((f) => f.walls)
   return (
-    <group position={[p.x, 0.06, p.z]}>
+    <group position={[p.x, p.y, p.z]}>
       <mesh geometry={box} position={[0, H / 2, 0]} scale={[w + 0.2, H, d + 0.2]} raycast={() => null}>
         <meshBasicMaterial transparent opacity={viz ? 0.025 : 0.05} color="#5b6b7d" depthWrite={false} />
         <Edges color={selected ? '#3d7bff' : viz ? '#ffffff' : '#9aa6b2'} lineWidth={selected ? 2 : 1} transparent opacity={selected ? 1 : viz ? 0.35 : 0.8} />
@@ -690,7 +712,7 @@ function IfcBuilding({
     )
   const top = floors.length - 1
   return (
-    <group position={[p.x + 0, 0.06, p.z]} rotation-y={(src.rot * Math.PI) / 180} scale={src.scale}>
+    <group position={[p.x, p.y, p.z]} rotation-y={(src.rot * Math.PI) / 180} scale={src.scale}>
       {showLabel && (
         <Html position={[0, parsed.size.h + 4, 0]} center className={`lbl3d${selected ? ' sel' : ''}`} zIndexRange={[20, 0]}>
           {p.b.name} · IFC
@@ -815,7 +837,7 @@ export function Site3D() {
     let target: THREE.Vector3
     let dist: number
     if (p) {
-      target = new THREE.Vector3(p.x, (p.b.floors * FLOOR_H) / 2, p.z)
+      target = new THREE.Vector3(p.x, p.y + (p.b.floors * FLOOR_H) / 2, p.z)
       dist = 80 + p.b.floors * 4
     } else if (sel.lotId) {
       const pl = plates.find((x) => x.id === sel.lotId)
@@ -979,9 +1001,9 @@ export function Site3D() {
                 {pl.rects.map((r, i) => (
                   <mesh
                     key={i}
-                    position={[r.x, 0.06, r.z]}
+                    position={[r.x, pl.y / 2, r.z]}
                     geometry={box}
-                    scale={[r.w, 0.12, r.d]}
+                    scale={[r.w, Math.max(0.12, pl.y), r.d]}
                     receiveShadow
                     onClick={(e) => {
                       e.stopPropagation()
@@ -992,7 +1014,7 @@ export function Site3D() {
                   </mesh>
                 ))}
                 {labels && (
-                  <Html position={[pl.label[0], 0.5, pl.label[1]]} center className="lbl3d lot" zIndexRange={[20, 0]}>
+                  <Html position={[pl.label[0], pl.y + 0.5, pl.label[1]]} center className="lbl3d lot" zIndexRange={[20, 0]}>
                     {pl.name}
                   </Html>
                 )}
@@ -1047,7 +1069,7 @@ export function Site3D() {
               const n = p.perFloor[hoverApt.floor]
               const loc = aptLocal(p, hoverApt.idx, n)
               return (
-                <Html position={[p.x + loc.x, hoverApt.floor * FLOOR_H + FLOOR_H + 1.2, p.z + loc.z]} center className="lbl3d tip" zIndexRange={[30, 0]}>
+                <Html position={[p.x + loc.x, p.y + hoverApt.floor * FLOOR_H + FLOOR_H + 1.2, p.z + loc.z]} center className="lbl3d tip" zIndexRange={[30, 0]}>
                   בניין {p.b.name} · דירה {hoverApt.number} · {floorLabel(hoverApt.floor)}
                 </Html>
               )
